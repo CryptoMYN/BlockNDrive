@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>BlockNDrive - Decentralized Document Vault</title>
+    <meta name="description" content="Decentralized document vault with client-side AES encryption, Lighthouse IPFS storage, Lit access control, Chainlink CRE risk analysis, smart contract registry, Google Authentication, and Firestore persistence." />
+    <meta property="og:title" content="BlockNDrive - Decentralized Document Vault" />
+    <meta property="og:description" content="Decentralized document vault with client-side AES encryption, Lighthouse IPFS storage, Lit access control, Chainlink CRE risk analysis, smart contract registry, Google Authentication, and Firestore persistence." />
+    <meta property="og:type" content="website" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <script>
+      (function() {
+        try {
+          var saved = localStorage.getItem('blockndrive_theme') || localStorage.getItem('theme');
+          var prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+          if (saved === 'dark' || (!saved && prefersDark)) {
+            document.documentElement.classList.add('dark');
+          } else {
+            document.documentElement.classList.remove('dark');
+          }
+        } catch (e) {}
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
+

@@ -1,0 +1,138 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User profile with linked Ethereum wallet and preferences",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "description": "Firebase Auth User ID"
+        },
+        "email": {
+          "type": "string",
+          "description": "User Google email address"
+        },
+        "displayName": {
+          "type": "string",
+          "description": "User display name"
+        },
+        "photoURL": {
+          "type": "string",
+          "description": "User avatar image URL"
+        },
+        "walletAddress": {
+          "type": "string",
+          "description": "Connected EVM wallet address"
+        },
+        "createdAt": {
+          "type": "string",
+          "description": "ISO timestamp of account creation"
+        },
+        "lastLoginAt": {
+          "type": "string",
+          "description": "ISO timestamp of last login"
+        }
+      },
+      "required": ["uid", "email", "createdAt"]
+    },
+    "DocumentRecord": {
+      "title": "DocumentRecord",
+      "description": "Encrypted document stored on IPFS/Filecoin and registered on BlockNDrive blockchain",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique document record ID"
+        },
+        "ownerId": {
+          "type": "string",
+          "description": "UID of the document owner"
+        },
+        "ownerAddress": {
+          "type": "string",
+          "description": "EVM wallet address of the document owner"
+        },
+        "name": {
+          "type": "string",
+          "description": "Original file name"
+        },
+        "size": {
+          "type": "number",
+          "description": "File size in bytes"
+        },
+        "mimeType": {
+          "type": "string",
+          "description": "MIME type"
+        },
+        "fileCID": {
+          "type": "string",
+          "description": "Lighthouse IPFS CID of encrypted file"
+        },
+        "manifestCID": {
+          "type": "string",
+          "description": "Lighthouse IPFS CID of manifest JSON"
+        },
+        "fileHash": {
+          "type": "string",
+          "description": "Keccak256 hash of plaintext file (bytes32)"
+        },
+        "manifestHash": {
+          "type": "string",
+          "description": "Keccak256 hash of manifest (bytes32)"
+        },
+        "riskScore": {
+          "type": "number",
+          "description": "Chainlink CRE AI evaluated risk score (0-100)"
+        },
+        "riskLevel": {
+          "type": "string",
+          "description": "Risk category: LOW, MEDIUM, or HIGH"
+        },
+        "aiSummary": {
+          "type": "string",
+          "description": "Chainlink CRE AI summary"
+        },
+        "classification": {
+          "type": "string",
+          "description": "Document classification"
+        },
+        "category": {
+          "type": "string",
+          "description": "Document category"
+        },
+        "encryptedKey": {
+          "type": "string",
+          "description": "Sealed AES key access-control record"
+        },
+        "onChainId": {
+          "type": "number",
+          "description": "Smart contract document index"
+        },
+        "createdAt": {
+          "type": "string",
+          "description": "ISO timestamp of creation"
+        },
+        "isDeleted": {
+          "type": "boolean",
+          "description": "Soft deletion flag"
+        }
+      },
+      "required": ["id", "ownerId", "ownerAddress", "name", "manifestCID", "fileHash", "manifestHash", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": {
+        "$ref": "#/entities/User"
+      },
+      "description": "User accounts and linked EVM wallet address"
+    },
+    "/documents/{documentId}": {
+      "schema": {
+        "$ref": "#/entities/DocumentRecord"
+      },
+      "description": "Encrypted documents and metadata persistent registry"
+    }
+  }
+}

@@ -1,0 +1,6 @@
+{
+  "name": "BlockNDrive",
+  "description": "Decentralized document vault with client-side AES encryption, Lighthouse IPFS storage, Lit access control, Chainlink CRE risk analysis, smart contract registry, Google Authentication, and Firestore persistence.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
