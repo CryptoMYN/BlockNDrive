@@ -12,12 +12,16 @@ import {
   Sparkles,
   Shield,
   X,
+  Server,
 } from "lucide-react";
 import type { UploadPhase, AIAnalysisResult, VaultDocument, WalletState } from "../types";
 import { encryptFileInBrowser, computeManifestHash, sealKeyForOwner } from "../services/crypto";
 import { uploadEncryptedFileToLighthouse, uploadManifestToLighthouse } from "../services/lighthouse";
 import { uploadDocumentToContract, saveDocumentToStorage } from "../services/blockchain";
 import { BLOCKNDRIVE_CONTRACT_ADDRESS } from "../constants/contract";
+import { LighthouseStatusIndicator } from "./LighthouseStatusIndicator";
+import { LighthouseStorageManagerModal } from "./LighthouseStorageManagerModal";
+import { seedInitialAuditLogsIfEmpty, auth } from "../lib/firebase";
 
 interface UploadSectionProps {
   wallet: WalletState;
@@ -38,6 +42,7 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
   const [uploadedCid, setUploadedCid] = useState<string | null>(null);
   const [recentTx, setRecentTx] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [showLighthouseModal, setShowLighthouseModal] = useState<boolean>(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -274,6 +279,11 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
       localStorage.setItem(`blockndrive_manifest_${manifestCID}`, JSON.stringify(newDoc.manifest));
       localStorage.setItem(`blockndrive_key_${encryptedPayload.fileHash}`, encryptedPayload.rawKeyHex);
 
+      // Seed initial cryptographic audit trail in Firestore
+      seedInitialAuditLogsIfEmpty(newDoc, auth.currentUser?.uid || wallet.address).catch((err) =>
+        console.warn("Could not seed initial audit logs:", err)
+      );
+
       setPhase("SUCCESS");
       setStatusMessage("Document successfully encrypted, pinned to IPFS, and registered on blockchain!");
 
@@ -303,9 +313,15 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
 
       {/* Upload Box Container matching user's ASCII diagram */}
       <div className="max-w-2xl mx-auto bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm p-6 sm:p-8 transition-colors">
-        <div className="text-center mb-5">
-          <h2 className="text-lg font-bold text-slate-900 dark:text-white">Upload Document</h2>
-          <p className="text-xs text-slate-500 dark:text-slate-400">Files are encrypted locally before leaving your browser</p>
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-2 mb-5">
+          <div className="text-center sm:text-left">
+            <h2 className="text-lg font-bold text-slate-900 dark:text-white">Upload Document</h2>
+            <p className="text-xs text-slate-500 dark:text-slate-400">Files are encrypted locally before leaving your browser</p>
+          </div>
+          <LighthouseStatusIndicator
+            onClick={() => setShowLighthouseModal(true)}
+            variant="badge"
+          />
         </div>
 
         {/* Drag & Drop Zone */}
@@ -615,6 +631,12 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
           </div>
         )}
       </div>
+
+      {/* Lighthouse Storage & Diagnostics Modal */}
+      <LighthouseStorageManagerModal
+        isOpen={showLighthouseModal}
+        onClose={() => setShowLighthouseModal(false)}
+      />
     </section>
   );
 };

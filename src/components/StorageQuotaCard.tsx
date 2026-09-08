@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import {
   HardDrive,
   Database,
@@ -18,9 +18,13 @@ import {
   FileCode,
   FileArchive,
   File,
+  Key,
+  Settings,
 } from "lucide-react";
 import type { VaultDocument } from "../types";
 import { getFileVisualConfig, type DetectedFileType } from "../utils/fileTypeHelper";
+import { LighthouseStorageManagerModal } from "./LighthouseStorageManagerModal";
+import { getLighthouseStatus, type LighthouseStatusResponse } from "../services/lighthouse";
 
 interface StorageQuotaCardProps {
   documents: VaultDocument[];
@@ -47,6 +51,23 @@ export const StorageQuotaCard: React.FC<StorageQuotaCardProps> = ({
   const [selectedQuotaMB, setSelectedQuotaMB] = useState<number>(100);
   const [showTierDropdown, setShowTierDropdown] = useState<boolean>(false);
   const [showDetails, setShowDetails] = useState<boolean>(false);
+  const [showLighthouseModal, setShowLighthouseModal] = useState<boolean>(false);
+  const [modalInitialTab, setModalInitialTab] = useState<"overview" | "files" | "apiKey" | "diagnostics">("overview");
+  const [liveLighthouseStatus, setLiveLighthouseStatus] = useState<LighthouseStatusResponse | null>(null);
+
+  // Load live lighthouse status
+  const fetchLiveStatus = async () => {
+    try {
+      const res = await getLighthouseStatus();
+      setLiveLighthouseStatus(res);
+    } catch {
+      // ignore
+    }
+  };
+
+  useEffect(() => {
+    fetchLiveStatus();
+  }, []);
 
   const quotaBytes = selectedQuotaMB * 1024 * 1024;
 
@@ -129,10 +150,15 @@ export const StorageQuotaCard: React.FC<StorageQuotaCardProps> = ({
               <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
                 <span>Lighthouse IPFS Storage</span>
               </h3>
-              <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-semibold bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800 flex items-center gap-1">
+              <button
+                onClick={() => setShowLighthouseModal(true)}
+                className="px-2 py-0.5 rounded-full text-[10px] font-mono font-semibold bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800 flex items-center gap-1 hover:bg-blue-100 dark:hover:bg-blue-900 transition cursor-pointer"
+                title="Manage Lighthouse Node & API Keys"
+              >
                 <Server className="h-2.5 w-2.5" />
-                <span>Filecoin Replicated</span>
-              </span>
+                <span>Node: Online</span>
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+              </button>
             </div>
             <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
               Decentralized storage consumption for encrypted documents & Lit manifests
@@ -140,8 +166,32 @@ export const StorageQuotaCard: React.FC<StorageQuotaCardProps> = ({
           </div>
         </div>
 
-        {/* Action controls: Quota Tier Selector & Refresh */}
-        <div className="flex items-center gap-2 relative">
+        {/* Action controls: Lighthouse Diagnostics, Lighthouse Settings, Quota Tier Selector & Refresh */}
+        <div className="flex items-center gap-2 relative flex-wrap sm:flex-nowrap">
+          <button
+            onClick={() => {
+              setModalInitialTab("diagnostics");
+              setShowLighthouseModal(true);
+            }}
+            className="px-2.5 py-1.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 hover:bg-emerald-100 dark:hover:bg-emerald-900 text-xs font-medium text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 flex items-center gap-1.5 transition cursor-pointer"
+            title="Test Lighthouse IPFS Node Connectivity & Canary Upload"
+          >
+            <Sparkles className="h-3 w-3 text-emerald-600 dark:text-emerald-400" />
+            <span className="font-semibold">Test Node</span>
+          </button>
+
+          <button
+            onClick={() => {
+              setModalInitialTab("apiKey");
+              setShowLighthouseModal(true);
+            }}
+            className="px-2.5 py-1.5 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 hover:bg-indigo-100 dark:hover:bg-indigo-900 text-xs font-medium text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 flex items-center gap-1.5 transition cursor-pointer"
+            title="Lighthouse Node Settings & API Key"
+          >
+            <Key className="h-3 w-3" />
+            <span className="font-medium">Lighthouse Key</span>
+          </button>
+
           <div className="relative">
             <button
               onClick={() => setShowTierDropdown(!showTierDropdown)}
@@ -191,7 +241,10 @@ export const StorageQuotaCard: React.FC<StorageQuotaCardProps> = ({
 
           {onRefresh && (
             <button
-              onClick={onRefresh}
+              onClick={() => {
+                fetchLiveStatus();
+                onRefresh();
+              }}
               disabled={isLoading}
               className="p-1.5 rounded-xl bg-slate-50 dark:bg-slate-800/80 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-700 transition cursor-pointer"
               title="Refresh Storage Status"
@@ -382,6 +435,17 @@ export const StorageQuotaCard: React.FC<StorageQuotaCardProps> = ({
           </span>
         </div>
       )}
+
+      {/* Lighthouse Node Storage Manager Modal */}
+      <LighthouseStorageManagerModal
+        isOpen={showLighthouseModal}
+        initialTab={modalInitialTab}
+        onClose={() => setShowLighthouseModal(false)}
+        onKeyUpdated={() => {
+          fetchLiveStatus();
+          if (onRefresh) onRefresh();
+        }}
+      />
     </div>
   );
 };

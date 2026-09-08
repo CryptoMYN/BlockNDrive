@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import {
+  Shield,
   ShieldCheck,
   Wallet,
   ExternalLink,
@@ -15,6 +16,7 @@ import {
   CloudCheck,
   Sun,
   Moon,
+  Server,
 } from "lucide-react";
 import type { User } from "firebase/auth";
 import {
@@ -22,6 +24,9 @@ import {
   CRE_FORWARDER_ADDRESS,
 } from "../constants/contract";
 import type { WalletState } from "../types";
+import { LighthouseStatusIndicator } from "./LighthouseStatusIndicator";
+import { LighthouseStorageManagerModal } from "./LighthouseStorageManagerModal";
+import { ProjectOverviewModal } from "./ProjectOverviewModal";
 
 interface NavbarProps {
   wallet: WalletState;
@@ -48,6 +53,8 @@ export const Navbar: React.FC<NavbarProps> = ({
 }) => {
   const [copied, setCopied] = useState(false);
   const [showContractInfo, setShowContractInfo] = useState(false);
+  const [showLighthouseModal, setShowLighthouseModal] = useState(false);
+  const [showOverviewModal, setShowOverviewModal] = useState(false);
 
   const copyContract = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -87,12 +94,22 @@ export const Navbar: React.FC<NavbarProps> = ({
               </div>
             </div>
 
-            {/* Contract and Network Info */}
-            <div className="hidden xl:flex items-center gap-2 text-xs">
+            {/* Contract, Overview and Network Info */}
+            <div className="hidden lg:flex items-center gap-2 text-xs">
+              <button
+                id="project-overview-trigger"
+                onClick={() => setShowOverviewModal(true)}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-50/80 hover:bg-indigo-100 dark:bg-indigo-950/60 dark:hover:bg-indigo-900 border border-indigo-200 dark:border-indigo-800 text-indigo-700 dark:text-indigo-300 font-semibold transition cursor-pointer"
+                title="View BlockNDrive Architecture & 7 Main Goals"
+              >
+                <Shield className="h-3.5 w-3.5 text-indigo-600 dark:text-indigo-400" />
+                <span>7 Goals & Architecture</span>
+              </button>
+
               <button
                 id="contract-info-trigger"
                 onClick={() => setShowContractInfo(true)}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-50 hover:bg-slate-100 dark:bg-slate-800/80 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 transition cursor-pointer"
+                className="hidden xl:flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-50 hover:bg-slate-100 dark:bg-slate-800/80 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 transition cursor-pointer"
                 title="View Smart Contract Details"
               >
                 <FileCode className="h-3.5 w-3.5 text-indigo-600 dark:text-indigo-400" />
@@ -109,6 +126,12 @@ export const Navbar: React.FC<NavbarProps> = ({
                 </span>
                 <span className="font-medium">Sepolia EVM</span>
               </div>
+
+              {/* Lighthouse IPFS Storage Status Indicator */}
+              <LighthouseStatusIndicator
+                onClick={() => setShowLighthouseModal(true)}
+                variant="pill"
+              />
             </div>
 
             {/* Right Side: Theme Toggle, Google Auth & Wallet Actions */}
@@ -323,6 +346,19 @@ export const Navbar: React.FC<NavbarProps> = ({
           </div>
         </div>
       )}
+
+      {/* Lighthouse Storage & Diagnostics Modal */}
+      <LighthouseStorageManagerModal
+        isOpen={showLighthouseModal}
+        onClose={() => setShowLighthouseModal(false)}
+      />
+
+      {/* Project Overview & 7 Goals Architecture Modal */}
+      <ProjectOverviewModal
+        isOpen={showOverviewModal}
+        onClose={() => setShowOverviewModal(false)}
+        onOpenLighthouseDiagnostics={() => setShowLighthouseModal(true)}
+      />
     </>
   );
 };

@@ -30,6 +30,8 @@ import {
 } from "../services/crypto";
 import { getFileVisualConfig } from "../utils/fileTypeHelper";
 import { LitShareModal } from "./LitShareModal";
+import { EncryptedSecurityBadge } from "./EncryptedSecurityBadge";
+import { DocumentActivityLogTab } from "./DocumentActivityLogTab";
 
 interface DocumentDetailsModalProps {
   document: VaultDocument | null;
@@ -46,6 +48,7 @@ export const DocumentDetailsModal: React.FC<DocumentDetailsModalProps> = ({
   onDownload,
   onOpenCREModal,
 }) => {
+  const [activeTab, setActiveTab] = useState<"details" | "activity">("details");
   const [copiedHash, setCopiedHash] = useState<string | null>(null);
   const [copiedShareLink, setCopiedShareLink] = useState<boolean>(false);
   const [showShareModal, setShowShareModal] = useState<boolean>(false);
@@ -102,8 +105,14 @@ export const DocumentDetailsModal: React.FC<DocumentDetailsModalProps> = ({
                   <FileVisualIcon className="h-3 w-3" />
                   <span>{fileVisual.extension}</span>
                 </span>
+                <EncryptedSecurityBadge
+                  fileName={fileName}
+                  fileSize={document.manifest?.size}
+                  ownerAddress={document.owner || wallet.address}
+                  variant="badge"
+                />
                 <h3 className="text-base font-bold text-slate-900 dark:text-white font-mono truncate max-w-md">
-                  🔐 {fileName}
+                  {fileName}
                 </h3>
               </div>
               <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
@@ -142,8 +151,51 @@ export const DocumentDetailsModal: React.FC<DocumentDetailsModalProps> = ({
           </div>
         </div>
 
+        {/* Tab Navigation Switcher */}
+        <div className="flex items-center gap-2 mt-4 p-1 bg-slate-100 dark:bg-slate-800 rounded-xl border border-slate-200/80 dark:border-slate-700/80">
+          <button
+            type="button"
+            id="doc-modal-tab-details"
+            onClick={() => setActiveTab("details")}
+            className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-semibold transition flex items-center justify-center gap-1.5 cursor-pointer ${
+              activeTab === "details"
+                ? "bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-xs border border-slate-200 dark:border-slate-700 font-bold"
+                : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200"
+            }`}
+          >
+            <ShieldCheck className="h-3.5 w-3.5 text-indigo-500" />
+            <span>Overview & Security</span>
+          </button>
+
+          <button
+            type="button"
+            id="doc-modal-tab-activity"
+            onClick={() => setActiveTab("activity")}
+            className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-semibold transition flex items-center justify-center gap-1.5 cursor-pointer ${
+              activeTab === "activity"
+                ? "bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-xs border border-slate-200 dark:border-slate-700 font-bold"
+                : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200"
+            }`}
+          >
+            <Activity className="h-3.5 w-3.5 text-emerald-500" />
+            <span>Document Activity Log</span>
+            <span className="px-1.5 py-0.2 rounded-full text-[9px] font-mono bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 font-bold">
+              Audit
+            </span>
+          </button>
+        </div>
+
         {/* Modal Body */}
-        <div className="mt-5 space-y-5 text-xs">
+        {activeTab === "activity" ? (
+          <div className="mt-4 text-xs">
+            <DocumentActivityLogTab
+              document={document}
+              wallet={wallet}
+              onOpenShareModal={() => setShowShareModal(true)}
+            />
+          </div>
+        ) : (
+          <div className="mt-5 space-y-5 text-xs">
           {/* Risk Alert Banner if High Risk */}
           {isHighRisk && (
             <div className="bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 rounded-xl p-3.5 flex items-start gap-2.5 text-rose-800 dark:text-rose-200">
@@ -439,6 +491,7 @@ export const DocumentDetailsModal: React.FC<DocumentDetailsModalProps> = ({
             )}
           </div>
         </div>
+        )}
 
         {/* Modal Footer */}
         <div className="mt-6 pt-4 border-t border-slate-100 dark:border-slate-800 flex flex-wrap items-center justify-between gap-3">

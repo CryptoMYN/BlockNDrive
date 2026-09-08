@@ -119,6 +119,78 @@
         }
       },
       "required": ["id", "ownerId", "ownerAddress", "name", "manifestCID", "fileHash", "manifestHash", "createdAt"]
+    },
+    "DocumentAuditLog": {
+      "title": "DocumentAuditLog",
+      "description": "Immutable cryptographic operation and audit trail entry for a specific document",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique audit log ID"
+        },
+        "docId": {
+          "type": "string",
+          "description": "Target document identifier or onChain ID"
+        },
+        "fileHash": {
+          "type": "string",
+          "description": "SHA-256 / Keccak256 hash of the file"
+        },
+        "ownerId": {
+          "type": "string",
+          "description": "Owner user UID or wallet"
+        },
+        "ownerAddress": {
+          "type": "string",
+          "description": "Connected EVM wallet address"
+        },
+        "action": {
+          "type": "string",
+          "description": "Action performed (upload, encryption, metadata_analysis, blockchain_registry, lit_access_seal, access_grant, download_decryption, archive, restore)",
+          "enum": [
+            "upload",
+            "encryption",
+            "metadata_analysis",
+            "blockchain_registry",
+            "lit_access_seal",
+            "access_grant",
+            "download_decryption",
+            "archive",
+            "restore"
+          ]
+        },
+        "title": {
+          "type": "string",
+          "description": "Short human-readable operation summary"
+        },
+        "description": {
+          "type": "string",
+          "description": "Detailed description of the operation outcome"
+        },
+        "status": {
+          "type": "string",
+          "description": "Operation status (completed, in_progress, failed)",
+          "enum": ["completed", "in_progress", "failed"]
+        },
+        "timestamp": {
+          "type": "string",
+          "description": "ISO timestamp of the event"
+        },
+        "timestampMs": {
+          "type": "number",
+          "description": "Unix millisecond timestamp for sorting"
+        },
+        "actor": {
+          "type": "string",
+          "description": "Actor that executed the action (owner, Lit Protocol, CRE Oracle, etc.)"
+        },
+        "metadata": {
+          "type": "object",
+          "description": "Optional cryptographic parameters, transaction hashes, or recipient info"
+        }
+      },
+      "required": ["id", "docId", "fileHash", "action", "title", "status", "timestamp", "timestampMs", "actor"]
     }
   },
   "firestore": {
@@ -133,6 +205,12 @@
         "$ref": "#/entities/DocumentRecord"
       },
       "description": "Encrypted documents and metadata persistent registry"
+    },
+    "/audit_logs/{logId}": {
+      "schema": {
+        "$ref": "#/entities/DocumentAuditLog"
+      },
+      "description": "Chronological audit logs and operation history for vault documents"
     }
   }
 }

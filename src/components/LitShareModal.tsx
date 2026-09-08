@@ -28,6 +28,7 @@ import {
   type LitSignedAccessPayload,
 } from "../services/crypto";
 import { getFileVisualConfig } from "../utils/fileTypeHelper";
+import { logDocumentActivity } from "../lib/firebase";
 
 interface LitShareModalProps {
   document: VaultDocument | null;
@@ -119,6 +120,26 @@ export const LitShareModal: React.FC<LitShareModalProps> = ({
     navigator.clipboard.writeText(shareUrl);
     setCopiedLink(true);
     setTimeout(() => setCopiedLink(false), 3000);
+
+    // Record audit event in Firestore
+    if (document) {
+      logDocumentActivity({
+        docId: document.id,
+        fileHash: document.fileHash,
+        ownerId: wallet.address,
+        ownerAddress: ownerAddress,
+        action: "access_grant",
+        title: "Lit Protocol Signed Access Grant",
+        description: `Generated ${effectiveHours}h time-limited signed access grant${recipientEmail ? ` for ${recipientEmail}` : ""}.`,
+        actor: `Owner (${ownerAddress.slice(0, 6)}...${ownerAddress.slice(-4)})`,
+        metadata: {
+          durationHours: effectiveHours,
+          expiresAt: payload?.expiresAt,
+          recipientEmail: recipientEmail || "Public/Unrestricted Link",
+          note: customNote || undefined,
+        },
+      });
+    }
   };
 
   const handleCopyEmailText = () => {
@@ -126,6 +147,25 @@ export const LitShareModal: React.FC<LitShareModalProps> = ({
     navigator.clipboard.writeText(emailContent.body);
     setCopiedEmailText(true);
     setTimeout(() => setCopiedEmailText(false), 3000);
+
+    // Record audit event in Firestore
+    if (document) {
+      logDocumentActivity({
+        docId: document.id,
+        fileHash: document.fileHash,
+        ownerId: wallet.address,
+        ownerAddress: ownerAddress,
+        action: "access_grant",
+        title: "Lit Protocol Email Invitation Created",
+        description: `Prepared and copied Lit Protocol email grant for ${recipientEmail || "recipient"} with ${effectiveHours}h expiration.`,
+        actor: `Owner (${ownerAddress.slice(0, 6)}...${ownerAddress.slice(-4)})`,
+        metadata: {
+          recipientEmail: recipientEmail || "Unspecified",
+          durationHours: effectiveHours,
+          expiresAt: payload?.expiresAt,
+        },
+      });
+    }
   };
 
   const expirationDate = payload

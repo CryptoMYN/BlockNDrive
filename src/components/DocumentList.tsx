@@ -42,6 +42,8 @@ import { deleteDocumentOnContract } from "../services/blockchain";
 import { HIGH_RISK_THRESHOLD } from "../constants/contract";
 import { generateGeometricPlaceholder, type PatternResult } from "../utils/imageGenerator";
 import { getFileVisualConfig, type DetectedFileType } from "../utils/fileTypeHelper";
+import { EncryptedSecurityBadge } from "./EncryptedSecurityBadge";
+import { logDocumentActivity } from "../lib/firebase";
 
 interface DocumentListProps {
   documents: VaultDocument[];
@@ -297,6 +299,22 @@ export const DocumentList: React.FC<DocumentListProps> = ({
 
       setFeedbackMsg({ id: doc.id, text: "Decrypted & downloaded successfully!" });
       setTimeout(() => setFeedbackMsg(null), 3000);
+
+      // Log download and decryption in Firestore audit log
+      logDocumentActivity({
+        docId: doc.id,
+        fileHash: doc.fileHash,
+        ownerId: doc.owner || wallet.address,
+        ownerAddress: ownerAddress,
+        action: "download_decryption",
+        title: "Document Decrypted & Downloaded",
+        description: `Owner unsealed Lit key and decrypted "${fileName}" using AES-GCM-256 in browser session.`,
+        actor: `Owner (${ownerAddress.slice(0, 6)}...${ownerAddress.slice(-4)})`,
+        metadata: {
+          downloadedAt: new Date().toISOString(),
+          fileSize: doc.manifest?.size || decryptedBuffer.byteLength,
+        },
+      });
     } catch (err: any) {
       console.error("Decryption failure:", err);
       setFeedbackMsg({
@@ -951,9 +969,16 @@ export const DocumentList: React.FC<DocumentListProps> = ({
                         </span>
 
                         <span className="font-semibold text-sm text-slate-900 dark:text-white truncate font-mono flex items-center gap-1.5">
-                          <Lock className="h-3.5 w-3.5 text-slate-400 dark:text-slate-500 shrink-0" title="AES-256 Encrypted" />
                           <span className="truncate">{fileName}</span>
                         </span>
+
+                        {/* Visual Encrypted Security Badge with Tooltip */}
+                        <EncryptedSecurityBadge
+                          fileName={fileName}
+                          fileSize={doc.manifest?.size}
+                          ownerAddress={doc.owner || wallet.address}
+                          variant="badge"
+                        />
 
                         {/* If in Archive, show 24h retention countdown pill */}
                         {expireInfo && (

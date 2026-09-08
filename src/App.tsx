@@ -6,6 +6,7 @@ import { DocumentList } from "./components/DocumentList";
 import { DocumentDetailsModal } from "./components/DocumentDetailsModal";
 import { ChainlinkCREModal } from "./components/ChainlinkCREModal";
 import { StorageQuotaCard } from "./components/StorageQuotaCard";
+import { ProjectOverviewModal } from "./components/ProjectOverviewModal";
 import { useTheme } from "./hooks/useTheme";
 import type { VaultDocument, WalletState } from "./types";
 import {
@@ -30,6 +31,7 @@ import {
   deleteDocumentInFirestore,
   restoreDocumentInFirestore,
   permanentlyDeleteDocumentInFirestore,
+  logDocumentActivity,
 } from "./lib/firebase";
 import {
   BLOCKNDRIVE_CONTRACT_ADDRESS,
@@ -64,6 +66,7 @@ export default function App() {
   const [isLoadingDocs, setIsLoadingDocs] = useState<boolean>(false);
   const [selectedDoc, setSelectedDoc] = useState<VaultDocument | null>(null);
   const [showCREModal, setShowCREModal] = useState<boolean>(false);
+  const [showOverviewModal, setShowOverviewModal] = useState<boolean>(false);
   const [authNotification, setAuthNotification] = useState<string | null>(null);
 
   // Monitor Firebase Auth State
@@ -302,6 +305,7 @@ export default function App() {
   // Archive (Soft-Delete) handler with Firestore cloud sync (24-hour retention)
   const handleDocumentDeleted = async (docId: number) => {
     const now = Date.now();
+    const targetDoc = documents.find((d) => d.id === docId);
     setDocuments((prev) =>
       prev.map((d) => (d.id === docId ? { ...d, deleted: true, deletedAt: now } : d))
     );
@@ -312,6 +316,20 @@ export default function App() {
       } catch (err) {
         console.warn("Could not archive document in Firestore:", err);
       }
+    }
+
+    if (targetDoc) {
+      logDocumentActivity({
+        docId: docId,
+        fileHash: targetDoc.fileHash,
+        ownerId: currentUser?.uid || wallet.address,
+        ownerAddress: targetDoc.owner || wallet.address,
+        action: "archive",
+        title: "Document Moved to 24-Hour Archive",
+        description: `Owner archived "${targetDoc.manifest?.name || `Doc #${docId}`}". Accessible for 24h recovery before automated purge.`,
+        actor: `Owner (${wallet.address.slice(0, 6)}...${wallet.address.slice(-4)})`,
+        metadata: { archivedAt: new Date(now).toISOString() },
+      });
     }
   };
 
@@ -332,10 +350,27 @@ export default function App() {
         }
       }
     }
+
+    docIds.forEach((docId) => {
+      const targetDoc = documents.find((d) => d.id === docId);
+      if (targetDoc) {
+        logDocumentActivity({
+          docId: docId,
+          fileHash: targetDoc.fileHash,
+          ownerId: currentUser?.uid || wallet.address,
+          ownerAddress: targetDoc.owner || wallet.address,
+          action: "archive",
+          title: "Batch Archive Operation",
+          description: `Archived as part of batch operation.`,
+          actor: `Owner (${wallet.address.slice(0, 6)}...${wallet.address.slice(-4)})`,
+        });
+      }
+    });
   };
 
   // Restore handler from Archive back to active
   const handleDocumentRestored = async (docId: number) => {
+    const targetDoc = documents.find((d) => d.id === docId);
     setDocuments((prev) =>
       prev.map((d) => (d.id === docId ? { ...d, deleted: false, deletedAt: undefined } : d))
     );
@@ -348,6 +383,19 @@ export default function App() {
       } catch (err) {
         console.warn("Could not restore document in Firestore:", err);
       }
+    }
+
+    if (targetDoc) {
+      logDocumentActivity({
+        docId: docId,
+        fileHash: targetDoc.fileHash,
+        ownerId: currentUser?.uid || wallet.address,
+        ownerAddress: targetDoc.owner || wallet.address,
+        action: "restore",
+        title: "Document Restored to Active Vault",
+        description: `Restored "${targetDoc.manifest?.name || `Doc #${docId}`}" from archive to active decentralized vault.`,
+        actor: `Owner (${wallet.address.slice(0, 6)}...${wallet.address.slice(-4)})`,
+      });
     }
   };
 
@@ -533,12 +581,27 @@ export default function App() {
         }}
       />
 
+      {/* Project Overview & 7 Goals Architecture Modal */}
+      <ProjectOverviewModal
+        isOpen={showOverviewModal}
+        onClose={() => setShowOverviewModal(false)}
+        onOpenCREModal={() => setShowCREModal(true)}
+      />
+
       {/* Clean Footer */}
       <footer className="border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 py-6 mt-auto text-xs text-slate-500 dark:text-slate-400 transition-colors">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-4">
-          <div className="flex items-center gap-2">
-            <ShieldCheck className="h-4 w-4 text-indigo-600 dark:text-indigo-400" />
-            <span className="font-semibold text-slate-700 dark:text-slate-300">BlockNDrive Vault</span>
+          <div className="flex items-center gap-2 flex-wrap">
+            <button
+              onClick={() => setShowOverviewModal(true)}
+              className="flex items-center gap-1.5 font-semibold text-indigo-600 dark:text-indigo-400 hover:underline cursor-pointer"
+            >
+              <ShieldCheck className="h-4 w-4" />
+              <span>BlockNDrive Vault</span>
+              <span className="px-1.5 py-0.5 rounded text-[10px] bg-indigo-50 dark:bg-indigo-950/80 text-indigo-700 dark:text-indigo-300 font-mono">
+                7 Goals
+              </span>
+            </button>
             <span>•</span>
             <span>Smart Contract:</span>
             <a
@@ -551,7 +614,14 @@ export default function App() {
             </a>
           </div>
 
-          <div className="flex items-center gap-4 text-[11px]">
+          <div className="flex items-center gap-4 text-[11px] flex-wrap">
+            <button
+              onClick={() => setShowOverviewModal(true)}
+              className="hover:text-slate-800 dark:hover:text-slate-200 underline cursor-pointer"
+            >
+              Architecture & Goals
+            </button>
+            <span>•</span>
             <span className="flex items-center gap-1">
               <Cloud className="h-3 w-3 text-emerald-600 dark:text-emerald-400" />
               Firestore Cloud Active

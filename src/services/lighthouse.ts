@@ -7,7 +7,204 @@ export interface LighthouseUploadResponse {
   size: number;
   storageProvider: string;
   gatewayUrl: string;
+  externalGatewayUrl?: string;
+  lighthouse?: {
+    Name?: string;
+    Hash?: string;
+    Size?: string;
+    synced?: boolean;
+  };
   warning?: string;
+}
+
+export interface LighthouseStatusResponse {
+  success: boolean;
+  connected: boolean;
+  dataLimit: number;
+  dataUsed: number;
+  totalFiles: number;
+  apiKeyMasked: string;
+  isCustom: boolean;
+  storageProvider?: string;
+  nodeStatus?: string;
+  error?: string;
+}
+
+export interface LighthouseUploadedFile {
+  id?: string;
+  fileName: string;
+  cid: string;
+  fileSizeInBytes: number;
+  mimeType?: string;
+  createdAt?: number;
+  lastUpdate?: number;
+  publicKey?: string;
+  encryption?: boolean;
+}
+
+export interface LighthouseDiagnosticStep {
+  id: string;
+  title: string;
+  status: "success" | "warning" | "error";
+  durationMs: number;
+  details: string;
+  data?: any;
+}
+
+export interface LighthouseDiagnosticReport {
+  success: boolean;
+  overallStatus: "healthy" | "degraded" | "error";
+  totalDurationMs: number;
+  timestamp: string;
+  apiKeyMasked: string;
+  keySource: string;
+  steps: LighthouseDiagnosticStep[];
+  storageMetrics: {
+    dataUsed: number;
+    dataLimit: number;
+    totalFiles: number;
+    canaryCid: string | null;
+  };
+}
+
+const STORAGE_KEY_CUSTOM_LIGHTHOUSE = "blockndrive_lighthouse_api_key";
+
+/**
+ * Retrieve user's saved custom Lighthouse API key
+ */
+export function getStoredLighthouseApiKey(): string | null {
+  if (typeof window === "undefined") return null;
+  const key = localStorage.getItem(STORAGE_KEY_CUSTOM_LIGHTHOUSE);
+  return key && key.trim() ? key.trim() : null;
+}
+
+/**
+ * Save or clear user's custom Lighthouse API key
+ */
+export function setStoredLighthouseApiKey(key: string | null): void {
+  if (typeof window === "undefined") return;
+  if (!key || !key.trim()) {
+    localStorage.removeItem(STORAGE_KEY_CUSTOM_LIGHTHOUSE);
+  } else {
+    localStorage.setItem(STORAGE_KEY_CUSTOM_LIGHTHOUSE, key.trim());
+  }
+}
+
+/**
+ * Helper to get default headers with optional custom Lighthouse API Key
+ */
+function getLighthouseRequestHeaders(): Record<string, string> {
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+  };
+  const customKey = getStoredLighthouseApiKey();
+  if (customKey) {
+    headers["x-lighthouse-key"] = customKey;
+  }
+  return headers;
+}
+
+/**
+ * Fetch Lighthouse account status, data usage, and network connectivity
+ */
+export async function getLighthouseStatus(customKey?: string): Promise<LighthouseStatusResponse> {
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+  };
+  const activeKey = customKey?.trim() || getStoredLighthouseApiKey();
+  if (activeKey) {
+    headers["x-lighthouse-key"] = activeKey;
+  }
+
+  const response = await fetch("/api/lighthouse/status", {
+    method: "GET",
+    headers,
+  });
+
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error(err.error || "Failed to query Lighthouse account status");
+  }
+
+  return response.json();
+}
+
+/**
+ * Fetch list of uploaded files on Lighthouse network
+ */
+export async function getLighthouseUploads(customKey?: string): Promise<{
+  success: boolean;
+  fileList: LighthouseUploadedFile[];
+  totalFiles: number;
+}> {
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+  };
+  const activeKey = customKey?.trim() || getStoredLighthouseApiKey();
+  if (activeKey) {
+    headers["x-lighthouse-key"] = activeKey;
+  }
+
+  const response = await fetch("/api/lighthouse/uploads", {
+    method: "GET",
+    headers,
+  });
+
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error(err.error || "Failed to fetch uploads from Lighthouse");
+  }
+
+  return response.json();
+}
+
+/**
+ * Verify a Lighthouse API Key against the Lighthouse network
+ */
+export async function verifyLighthouseApiKey(apiKey: string): Promise<{
+  valid: boolean;
+  dataLimit: number;
+  dataUsed: number;
+  totalFiles: number;
+}> {
+  const response = await fetch("/api/lighthouse/verify-key", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ apiKey }),
+  });
+
+  const data = await response.json();
+  if (!response.ok || !data.valid) {
+    throw new Error(data.error || "Invalid Lighthouse API Key");
+  }
+
+  return data;
+}
+
+/**
+ * Run comprehensive diagnostic tests against Lighthouse storage node
+ */
+export async function runLighthouseDiagnostics(customKey?: string): Promise<LighthouseDiagnosticReport> {
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+  };
+  const activeKey = customKey?.trim() || getStoredLighthouseApiKey();
+  if (activeKey) {
+    headers["x-lighthouse-key"] = activeKey;
+  }
+
+  const response = await fetch("/api/lighthouse/diagnostics", {
+    method: "POST",
+    headers,
+    body: JSON.stringify({}),
+  });
+
+  const data = await response.json();
+  if (!response.ok) {
+    throw new Error(data.error || "Failed to complete Lighthouse diagnostics");
+  }
+
+  return data;
 }
 
 /**
@@ -31,9 +228,7 @@ export async function uploadEncryptedFileToLighthouse(
 
   const response = await fetch("/api/lighthouse/upload", {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
+    headers: getLighthouseRequestHeaders(),
     body: JSON.stringify({
       fileName: `${fileName}.enc`,
       fileContentBase64,
@@ -56,9 +251,7 @@ export async function uploadManifestToLighthouse(
 ): Promise<LighthouseUploadResponse> {
   const response = await fetch("/api/lighthouse/upload", {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
+    headers: getLighthouseRequestHeaders(),
     body: JSON.stringify({
       fileName: `manifest_${Date.now()}.json`,
       isJson: true,

@@ -25,5 +25,12 @@ service cloud.firestore {
       allow update: if isAuthenticated() && resource.data.ownerId == request.auth.uid && request.resource.data.ownerId == request.auth.uid;
       allow delete: if isAuthenticated() && resource.data.ownerId == request.auth.uid;
     }
+
+    // Document Audit Logs (Immutable append-only operation history)
+    match /audit_logs/{logId} {
+      allow read: if isAuthenticated() && (resource.data.ownerId == request.auth.uid || resource.data.ownerAddress == request.auth.uid);
+      allow create: if isAuthenticated() && (request.resource.data.ownerId == request.auth.uid || request.resource.data.ownerId == 'system');
+      allow update, delete: if false;
+    }
   }
 }

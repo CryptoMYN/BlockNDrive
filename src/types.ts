@@ -91,6 +91,47 @@ export type UploadPhase =
   | "SUCCESS"
   | "ERROR";
 
+export type AuditActionType =
+  | "upload"
+  | "encryption"
+  | "metadata_analysis"
+  | "blockchain_registry"
+  | "lit_access_seal"
+  | "access_grant"
+  | "download_decryption"
+  | "archive"
+  | "restore";
+
+export interface DocumentAuditLog {
+  id: string;
+  docId: number | string;
+  fileHash: string;
+  ownerId?: string | null;
+  ownerAddress?: string | null;
+  action: AuditActionType;
+  title: string;
+  description: string;
+  status: "completed" | "in_progress" | "failed";
+  timestamp: string;
+  timestampMs: number;
+  actor: string;
+  metadata?: {
+    fileCID?: string;
+    manifestCID?: string;
+    riskScore?: number;
+    riskLevel?: string;
+    encryptionAlgorithm?: string;
+    recipient?: string;
+    grantDurationDays?: number;
+    onChainTxHash?: string;
+    network?: string;
+    contractAddress?: string;
+    fileSize?: number;
+    mimeType?: string;
+    [key: string]: any;
+  };
+}
+
 export interface WalletState {
   isConnected: boolean;
   address: string | null;
