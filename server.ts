@@ -50,6 +50,25 @@ function getGenAI(): GoogleGenAI | null {
 // API Routes
 // -------------------------------------------------------------
 
+// Digital Asset Links for Google Play Store Trusted Web Activity (TWA) verification
+app.get("/.well-known/assetlinks.json", (req, res) => {
+  res.setHeader("Content-Type", "application/json");
+  res.json([
+    {
+      relation: ["delegate_permission/common.handle_all_urls"],
+      target: {
+        namespace: "android_app",
+        package_name: process.env.ANDROID_PACKAGE_NAME || "com.blockndrive.vault",
+        sha256_cert_fingerprints: process.env.ANDROID_SHA256_FINGERPRINTS
+          ? process.env.ANDROID_SHA256_FINGERPRINTS.split(",").map((s) => s.trim())
+          : [
+              "36:FB:9E:B8:A4:1C:B0:CD:DA:91:4C:A7:AC:0E:7E:0F:07:DF:3E:57:00:00:00:00:00:00:00:00:00:00:00:00",
+            ],
+      },
+    },
+  ]);
+});
+
 // Health check
 app.get("/api/health", (req, res) => {
   const activeKey = getLighthouseKey(req);
@@ -690,7 +709,10 @@ Return pure JSON ONLY with the following schema:
 async function startServer() {
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
-      server: { middlewareMode: true },
+      server: {
+        middlewareMode: true,
+        hmr: process.env.DISABLE_HMR === "true" ? false : undefined,
+      },
       appType: "spa",
     });
     app.use(vite.middlewares);

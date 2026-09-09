@@ -1,0 +1,69 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#4338ca" />
+      <stop offset="50%" stop-color="#4f46e5" />
+      <stop offset="100%" stop-color="#7c3aed" />
+    </linearGradient>
+    <linearGradient id="shieldGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.95" />
+      <stop offset="100%" stop-color="#e0e7ff" stop-opacity="0.85" />
+    </linearGradient>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="125%">
+      <feDropShadow dx="0" dy="8" stdDeviation="12" flood-color="#1e1b4b" flood-opacity="0.3" />
+    </filter>
+  </defs>
+
+  <!-- Background rounded squircle -->
+  <rect width="512" height="512" rx="112" fill="url(#bgGrad)" />
+
+  <!-- Decentralized network connecting nodes -->
+  <g stroke="#a5b4fc" stroke-width="3" stroke-opacity="0.4" stroke-dasharray="6,6">
+    <line x1="120" y1="130" x2="256" y2="90" />
+    <line x1="392" y1="130" x2="256" y2="90" />
+    <line x1="100" y1="280" x2="150" y2="380" />
+    <line x1="412" y1="280" x2="362" y2="380" />
+    <line x1="256" y1="420" x2="150" y2="380" />
+    <line x1="256" y1="420" x2="362" y2="380" />
+  </g>
+
+  <!-- Outer constellation dots -->
+  <circle cx="120" cy="130" r="8" fill="#c7d2fe" />
+  <circle cx="392" cy="130" r="8" fill="#c7d2fe" />
+  <circle cx="256" cy="90" r="10" fill="#ffffff" />
+  <circle cx="100" cy="280" r="8" fill="#c7d2fe" />
+  <circle cx="412" cy="280" r="8" fill="#c7d2fe" />
+  <circle cx="150" cy="380" r="8" fill="#c7d2fe" />
+  <circle cx="362" cy="380" r="8" fill="#c7d2fe" />
+  <circle cx="256" cy="420" r="10" fill="#ffffff" />
+
+  <!-- Central Security Shield -->
+  <g filter="url(#shadow)">
+    <path d="M 256 120 
+             C 320 120, 360 145, 375 165
+             C 375 270, 325 355, 256 395
+             C 187 355, 137 270, 137 165
+             C 152 145, 192 120, 256 120 Z" 
+          fill="url(#shieldGrad)" />
+
+    <!-- Inner Shield Accent -->
+    <path d="M 256 142 
+             C 305 142, 340 162, 354 178
+             C 354 262, 312 334, 256 368
+             C 200 334, 158 262, 158 178
+             C 172 162, 207 142, 256 142 Z" 
+          fill="#4f46e5" fill-opacity="0.12" />
+
+    <!-- Vault Padlock -->
+    <!-- Shackle -->
+    <path d="M 226 230 V 205 C 226 188 239 175 256 175 C 273 175 286 188 286 205 V 230" 
+          fill="none" stroke="#312e81" stroke-width="16" stroke-linecap="round" />
+    <!-- Lock Body -->
+    <rect x="206" y="226" width="100" height="82" rx="18" fill="#312e81" />
+    <!-- Keyhole -->
+    <circle cx="256" cy="260" r="9" fill="#ffffff" />
+    <path d="M 252 265 L 250 286 H 262 L 260 265 Z" fill="#ffffff" />
+    <!-- Lock Accent Dot -->
+    <circle cx="290" cy="242" r="4" fill="#818cf8" />
+  </g>
+</svg>

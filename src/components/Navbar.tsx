@@ -27,6 +27,7 @@ import type { WalletState } from "../types";
 import { LighthouseStatusIndicator } from "./LighthouseStatusIndicator";
 import { LighthouseStorageManagerModal } from "./LighthouseStorageManagerModal";
 import { ProjectOverviewModal } from "./ProjectOverviewModal";
+import { PWAInstallButton } from "./PWAInstallButton";
 
 interface NavbarProps {
   wallet: WalletState;
@@ -38,6 +39,8 @@ interface NavbarProps {
   onToggleDemoMode: () => void;
   onSignInGoogle: () => void;
   onSignOutGoogle: () => void;
+  onOpenWalletModal?: () => void;
+  onOpenPlayStoreGuide?: () => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -50,6 +53,8 @@ export const Navbar: React.FC<NavbarProps> = ({
   onToggleDemoMode,
   onSignInGoogle,
   onSignOutGoogle,
+  onOpenWalletModal,
+  onOpenPlayStoreGuide,
 }) => {
   const [copied, setCopied] = useState(false);
   const [showContractInfo, setShowContractInfo] = useState(false);
@@ -153,6 +158,9 @@ export const Navbar: React.FC<NavbarProps> = ({
                 </button>
               )}
 
+              {/* PWA & Google Play Store Install Action */}
+              <PWAInstallButton onOpenPlayStoreGuide={onOpenPlayStoreGuide} />
+
               {/* Google Authentication Button / User Profile */}
               {currentUser ? (
                 <div className="flex items-center gap-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-1 pr-2.5">
@@ -215,22 +223,30 @@ export const Navbar: React.FC<NavbarProps> = ({
               )}
 
               {/* Wallet Actions */}
-              {wallet.isConnected ? (
+              {wallet.isConnected && !wallet.isDemoMode ? (
+                /* REAL METAMASK CONNECTED */
                 <div className="flex items-center gap-2">
-                  <div className="hidden md:flex flex-col text-right">
-                    <span className="text-xs font-semibold text-slate-800 dark:text-slate-100">
-                      {truncate(wallet.address || "", 6, 4)}
+                  <button
+                    onClick={onOpenWalletModal || onConnect}
+                    className="hidden md:flex flex-col text-right hover:opacity-80 transition cursor-pointer"
+                    title="MetaMask connected on Sepolia. Click for wallet details."
+                  >
+                    <div className="flex items-center gap-1.5 justify-end">
+                      <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                      <span className="text-xs font-semibold text-slate-800 dark:text-slate-100 font-mono">
+                        {truncate(wallet.address || "", 6, 4)}
+                      </span>
+                    </div>
+                    <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-semibold">
+                      {wallet.balance ? `${wallet.balance} SEP` : "Sepolia"} • Safest Active
                     </span>
-                    <span className="text-[11px] text-slate-500 dark:text-slate-400">
-                      {wallet.balance ? `${wallet.balance} SEP` : "Connected"}
-                      {wallet.isDemoMode && " (Demo)"}
-                    </span>
-                  </div>
+                  </button>
 
                   <button
                     id="wallet-account-btn"
                     onClick={onDisconnect}
                     className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-rose-50 dark:hover:bg-rose-950/40 hover:text-rose-600 dark:hover:text-rose-400 hover:border-rose-200 dark:hover:border-rose-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200 text-xs font-medium transition cursor-pointer"
+                    title="Disconnect MetaMask"
                   >
                     <div className="w-2 h-2 rounded-full bg-emerald-500" />
                     <span className="font-mono sm:hidden">
@@ -240,23 +256,27 @@ export const Navbar: React.FC<NavbarProps> = ({
                   </button>
                 </div>
               ) : (
-                <div className="flex items-center gap-1.5">
-                  <button
-                    id="connect-metamask-btn"
-                    onClick={onConnect}
-                    className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold shadow-xs transition cursor-pointer"
-                  >
-                    <Wallet className="h-3.5 w-3.5" />
-                    <span>Connect Wallet</span>
-                  </button>
+                /* DEMO MODE OR DISCONNECTED: Prominent Connect MetaMask Button */
+                <div className="flex items-center gap-2">
+                  {wallet.isDemoMode && (
+                    <button
+                      id="demo-mode-badge-btn"
+                      onClick={onOpenWalletModal || onConnect}
+                      className="hidden sm:flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-amber-50 dark:bg-amber-950/50 border border-amber-200 dark:border-amber-800 text-amber-800 dark:text-amber-300 text-xs font-medium hover:bg-amber-100 dark:hover:bg-amber-900/60 transition cursor-pointer"
+                      title="Currently running in simulated Demo Mode. Click to view wallet options."
+                    >
+                      <span>🧪 Demo Mode</span>
+                    </button>
+                  )}
 
                   <button
-                    id="demo-mode-btn"
-                    onClick={onToggleDemoMode}
-                    className="px-2.5 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 text-xs font-medium transition cursor-pointer"
-                    title="Simulate with demo wallet"
+                    id="connect-metamask-nav-btn"
+                    onClick={onOpenWalletModal || onConnect}
+                    className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 active:scale-[0.98] text-white text-xs font-bold shadow-sm shadow-indigo-200 dark:shadow-none transition cursor-pointer"
+                    title="Connect your MetaMask wallet for on-chain Sepolia security (Safest path)"
                   >
-                    Demo
+                    <span className="text-sm leading-none">🦊</span>
+                    <span>Connect MetaMask</span>
                   </button>
                 </div>
               )}

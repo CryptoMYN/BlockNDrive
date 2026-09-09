@@ -7,12 +7,16 @@ import { DocumentDetailsModal } from "./components/DocumentDetailsModal";
 import { ChainlinkCREModal } from "./components/ChainlinkCREModal";
 import { StorageQuotaCard } from "./components/StorageQuotaCard";
 import { ProjectOverviewModal } from "./components/ProjectOverviewModal";
+import { WalletConnectModal } from "./components/WalletConnectModal";
+import { PlayStoreGuideModal } from "./components/PlayStoreGuideModal";
+import { OfflineIndicator } from "./components/OfflineIndicator";
 import { useTheme } from "./hooks/useTheme";
 import type { VaultDocument, WalletState } from "./types";
 import {
   connectMetaMask,
   fetchUserDocuments,
   getStoredDocuments,
+  loadSampleDemoDocuments,
   restoreDocumentOnContract,
   permanentlyDeleteDocument,
 } from "./services/blockchain";
@@ -20,6 +24,8 @@ import {
   parseLitShareableLink,
   isLitPayloadExpired,
   formatLitTimeRemaining,
+  deriveAddressFromUid,
+  getOrCreateDeviceVaultAddress,
 } from "./services/crypto";
 import {
   auth,
@@ -47,19 +53,52 @@ import {
   Cloud,
   CheckCircle2,
   LogIn,
+  Smartphone,
 } from "lucide-react";
 
 export default function App() {
   const { isDark, toggleTheme } = useTheme();
   const [currentUser, setCurrentUser] = useState<User | null>(null);
-  const [wallet, setWallet] = useState<WalletState>({
-    isConnected: true, // Default to demo connected for instantaneous testability
-    address: "0x71C...Demo",
-    chainId: 11155111,
-    networkName: "Sepolia Testnet",
-    balance: "1.450",
-    isMetaMaskAvailable: typeof window !== "undefined" && !!window.ethereum,
-    isDemoMode: true,
+
+  // Production-first wallet state initialization (never forces fake demo mode on production users)
+  const [wallet, setWallet] = useState<WalletState>(() => {
+    const hasMetaMask = typeof window !== "undefined" && !!window.ethereum;
+    const isDemoStored = typeof window !== "undefined" && localStorage.getItem("blockndrive_demo_mode") === "true";
+    const deviceAddr = typeof window !== "undefined" ? localStorage.getItem("blockndrive_device_vault_address") : null;
+
+    if (isDemoStored) {
+      return {
+        isConnected: true,
+        address: "0x71C...Demo",
+        chainId: 11155111,
+        networkName: "Sepolia Testnet",
+        balance: "1.450",
+        isMetaMaskAvailable: hasMetaMask,
+        isDemoMode: true,
+      };
+    }
+
+    if (deviceAddr) {
+      return {
+        isConnected: true,
+        address: deviceAddr,
+        chainId: 11155111,
+        networkName: "Device Web Crypto Vault",
+        balance: "0.000",
+        isMetaMaskAvailable: hasMetaMask,
+        isDemoMode: false,
+      };
+    }
+
+    return {
+      isConnected: false,
+      address: null,
+      chainId: 11155111,
+      networkName: "",
+      balance: null,
+      isMetaMaskAvailable: hasMetaMask,
+      isDemoMode: false,
+    };
   });
 
   const [documents, setDocuments] = useState<VaultDocument[]>([]);
@@ -67,6 +106,8 @@ export default function App() {
   const [selectedDoc, setSelectedDoc] = useState<VaultDocument | null>(null);
   const [showCREModal, setShowCREModal] = useState<boolean>(false);
   const [showOverviewModal, setShowOverviewModal] = useState<boolean>(false);
+  const [showWalletModal, setShowWalletModal] = useState<boolean>(false);
+  const [showPlayStoreGuide, setShowPlayStoreGuide] = useState<boolean>(false);
   const [authNotification, setAuthNotification] = useState<string | null>(null);
 
   // Monitor Firebase Auth State
@@ -74,24 +115,43 @@ export default function App() {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       setCurrentUser(user);
       if (user) {
-        await syncUserProfile(user, wallet.address);
-        // Load documents from Firestore for this user
-        loadDocuments(user);
+        const derivedAddr = deriveAddressFromUid(user.uid);
+        // If not connected with active MetaMask, link this user's Google Cloud Vault
+        setWallet((prev) => {
+          if (
+            prev.isConnected &&
+            !prev.isDemoMode &&
+            prev.isMetaMaskAvailable &&
+            !prev.networkName.includes("Google") &&
+            !prev.networkName.includes("Device")
+          ) {
+            return prev;
+          }
+          return {
+            ...prev,
+            isConnected: true,
+            address: derivedAddr,
+            networkName: "Google Cloud Vault (Firestore + IPFS)",
+            balance: "0.000",
+            isDemoMode: false,
+          };
+        });
+        await syncUserProfile(user, derivedAddr);
+        loadDocuments(user, false);
       } else {
-        // Fallback to local / blockchain documents
-        loadDocuments(null);
+        // Not signed in to Google: load documents according to current wallet state
+        loadDocuments(null, wallet.isDemoMode);
       }
     });
 
     return () => unsubscribe();
-  }, [wallet.address]);
+  }, [wallet.address, wallet.isDemoMode]);
 
-  // Check if MetaMask is available on mount
+  // Check if MetaMask is available on mount & auto-listen for account changes
   useEffect(() => {
     const hasMetaMask = typeof window !== "undefined" && !!window.ethereum;
     setWallet((prev) => ({ ...prev, isMetaMaskAvailable: hasMetaMask }));
 
-    // Auto-listen for account or chain changes if user already authorized MetaMask
     if (hasMetaMask && window.ethereum) {
       window.ethereum.on?.("accountsChanged", (accounts: string[]) => {
         if (accounts && accounts.length > 0) {
@@ -99,8 +159,10 @@ export default function App() {
             ...prev,
             isConnected: true,
             address: accounts[0],
+            networkName: "Sepolia Testnet",
             isDemoMode: false,
           }));
+          localStorage.removeItem("blockndrive_demo_mode");
         } else {
           setWallet((prev) => ({
             ...prev,
@@ -140,13 +202,20 @@ export default function App() {
               riskScore: 15,
               deleted: false,
               manifest: {
+                version: 1,
                 name: payload.fileName,
                 size: 0,
                 mimeType: "application/octet-stream",
                 fileCID: payload.manifestCID,
                 fileHash: payload.fileHash,
-                createdAt: new Date(payload.issuedAt).toISOString(),
+                iv: "0x000000000000000000000000",
                 encryptedKey: "0xLitAccessGrant",
+                metadata: {
+                  uploadedAt: new Date(payload.issuedAt).toISOString(),
+                  originalName: payload.fileName,
+                  encryptionAlgorithm: "AES-GCM-256",
+                  storageProvider: "Lighthouse (Filecoin/IPFS)",
+                },
                 aiAnalysis: {
                   classification: "Lit Shared Access Document",
                   category: "Cryptographic Lit Share",
@@ -179,7 +248,10 @@ export default function App() {
     return () => window.removeEventListener("hashchange", handleCheckHash);
   }, [documents]);
 
-  const loadDocuments = async (activeUser: User | null = currentUser) => {
+  const loadDocuments = async (
+    activeUser: User | null = currentUser,
+    isDemo: boolean = wallet.isDemoMode
+  ) => {
     setIsLoadingDocs(true);
     try {
       let mergedDocs: VaultDocument[] = [];
@@ -192,8 +264,8 @@ export default function App() {
         }
       }
 
-      // 2. Fetch on-chain documents
-      const onChainDocs = await fetchUserDocuments(wallet.address, wallet.isDemoMode);
+      // 2. Fetch on-chain documents / local documents
+      const onChainDocs = await fetchUserDocuments(wallet.address, isDemo);
 
       // 3. Merge without duplicates (by fileHash or id)
       const existingHashes = new Set(mergedDocs.map((d) => d.fileHash));
@@ -207,7 +279,7 @@ export default function App() {
       setDocuments(mergedDocs);
     } catch (err) {
       console.warn("Failed to load documents:", err);
-      setDocuments(getStoredDocuments());
+      setDocuments(getStoredDocuments(isDemo));
     } finally {
       setIsLoadingDocs(false);
     }
@@ -218,10 +290,21 @@ export default function App() {
     try {
       const user = await signInWithGoogle();
       setCurrentUser(user);
-      await syncUserProfile(user, wallet.address);
+      const derivedAddr = deriveAddressFromUid(user.uid);
+      setWallet({
+        isConnected: true,
+        address: derivedAddr,
+        chainId: 11155111,
+        networkName: "Google Cloud Vault (Firestore + IPFS)",
+        balance: "0.000",
+        isMetaMaskAvailable: typeof window !== "undefined" && !!window.ethereum,
+        isDemoMode: false,
+      });
+      localStorage.removeItem("blockndrive_demo_mode");
+      await syncUserProfile(user, derivedAddr);
       setAuthNotification(`Signed in as ${user.displayName || user.email}`);
       setTimeout(() => setAuthNotification(null), 4000);
-      loadDocuments(user);
+      loadDocuments(user, false);
     } catch (err: any) {
       alert(`Google Sign-In failed: ${err.message || "Unknown error"}`);
     }
@@ -233,7 +316,7 @@ export default function App() {
       setCurrentUser(null);
       setAuthNotification("Signed out successfully");
       setTimeout(() => setAuthNotification(null), 3000);
-      loadDocuments(null);
+      loadDocuments(null, wallet.isDemoMode);
     } catch (err: any) {
       console.error("Sign-out error:", err);
     }
@@ -253,17 +336,43 @@ export default function App() {
         isDemoMode: false,
       };
       setWallet(updatedWallet);
+      localStorage.removeItem("blockndrive_demo_mode");
       if (currentUser) {
         syncUserProfile(currentUser, res.address);
       }
-      loadDocuments();
+      setAuthNotification(`🦊 MetaMask Connected: ${res.address.slice(0, 6)}...${res.address.slice(-4)} (Safest Storage Path Active)`);
+      setTimeout(() => setAuthNotification(null), 5000);
+      loadDocuments(currentUser, false);
+      setShowWalletModal(false);
     } catch (err: any) {
-      alert(err.message || "Failed to connect wallet. Switching to Demo Mode.");
-      handleEnableDemo();
+      console.warn("MetaMask connection failed:", err);
+      setShowWalletModal(true);
+      throw err;
     }
   };
 
+  // Activate Local Device Vault (Web Crypto 256-bit client-side identity for Play Store / mobile users)
+  const handleEnableDeviceVault = () => {
+    const addr = getOrCreateDeviceVaultAddress();
+    setWallet({
+      isConnected: true,
+      address: addr,
+      chainId: 11155111,
+      networkName: "Device Web Crypto Vault",
+      balance: "0.000",
+      isMetaMaskAvailable: typeof window !== "undefined" && !!window.ethereum,
+      isDemoMode: false,
+    });
+    localStorage.removeItem("blockndrive_demo_mode");
+    setAuthNotification(`🔐 Local Device Vault Activated: ${addr.slice(0, 6)}...${addr.slice(-4)}`);
+    setTimeout(() => setAuthNotification(null), 4000);
+    loadDocuments(currentUser, false);
+  };
+
+  // Disconnect handler
   const handleDisconnect = () => {
+    localStorage.removeItem("blockndrive_demo_mode");
+    localStorage.removeItem("blockndrive_device_vault_address");
     setWallet({
       isConnected: false,
       address: null,
@@ -273,8 +382,10 @@ export default function App() {
       isMetaMaskAvailable: typeof window !== "undefined" && !!window.ethereum,
       isDemoMode: false,
     });
+    setDocuments([]);
   };
 
+  // Enable Demo Sandbox Mode explicitly for testing
   const handleEnableDemo = () => {
     setWallet({
       isConnected: true,
@@ -285,7 +396,11 @@ export default function App() {
       isMetaMaskAvailable: typeof window !== "undefined" && !!window.ethereum,
       isDemoMode: true,
     });
-    loadDocuments();
+    localStorage.setItem("blockndrive_demo_mode", "true");
+    const sampleDocs = loadSampleDemoDocuments();
+    setDocuments(sampleDocs);
+    setAuthNotification("🧪 Sandbox Demo Mode enabled with simulated Sepolia assets");
+    setTimeout(() => setAuthNotification(null), 4000);
   };
 
   // Upload handler with Firestore cloud persistence
@@ -322,12 +437,12 @@ export default function App() {
       logDocumentActivity({
         docId: docId,
         fileHash: targetDoc.fileHash,
-        ownerId: currentUser?.uid || wallet.address,
-        ownerAddress: targetDoc.owner || wallet.address,
+        ownerId: currentUser?.uid || wallet.address || "anonymous",
+        ownerAddress: targetDoc.owner || wallet.address || "anonymous",
         action: "archive",
         title: "Document Moved to 24-Hour Archive",
         description: `Owner archived "${targetDoc.manifest?.name || `Doc #${docId}`}". Accessible for 24h recovery before automated purge.`,
-        actor: `Owner (${wallet.address.slice(0, 6)}...${wallet.address.slice(-4)})`,
+        actor: `Owner (${wallet.address ? `${wallet.address.slice(0, 6)}...${wallet.address.slice(-4)}` : "User"})`,
         metadata: { archivedAt: new Date(now).toISOString() },
       });
     }
@@ -357,12 +472,12 @@ export default function App() {
         logDocumentActivity({
           docId: docId,
           fileHash: targetDoc.fileHash,
-          ownerId: currentUser?.uid || wallet.address,
-          ownerAddress: targetDoc.owner || wallet.address,
+          ownerId: currentUser?.uid || wallet.address || "anonymous",
+          ownerAddress: targetDoc.owner || wallet.address || "anonymous",
           action: "archive",
           title: "Batch Archive Operation",
           description: `Archived as part of batch operation.`,
-          actor: `Owner (${wallet.address.slice(0, 6)}...${wallet.address.slice(-4)})`,
+          actor: `Owner (${wallet.address ? `${wallet.address.slice(0, 6)}...${wallet.address.slice(-4)}` : "User"})`,
         });
       }
     });
@@ -389,12 +504,12 @@ export default function App() {
       logDocumentActivity({
         docId: docId,
         fileHash: targetDoc.fileHash,
-        ownerId: currentUser?.uid || wallet.address,
-        ownerAddress: targetDoc.owner || wallet.address,
+        ownerId: currentUser?.uid || wallet.address || "anonymous",
+        ownerAddress: targetDoc.owner || wallet.address || "anonymous",
         action: "restore",
         title: "Document Restored to Active Vault",
         description: `Restored "${targetDoc.manifest?.name || `Doc #${docId}`}" from archive to active decentralized vault.`,
-        actor: `Owner (${wallet.address.slice(0, 6)}...${wallet.address.slice(-4)})`,
+        actor: `Owner (${wallet.address ? `${wallet.address.slice(0, 6)}...${wallet.address.slice(-4)}` : "User"})`,
       });
     }
   };
@@ -418,7 +533,7 @@ export default function App() {
     }
   };
 
-  // Permanent Delete handler (purged forever so user never sees it again)
+  // Permanent Delete handler
   const handleDocumentPermanentlyDeleted = async (docId: number) => {
     setDocuments((prev) => prev.filter((d) => d.id !== docId));
 
@@ -458,11 +573,13 @@ export default function App() {
         currentUser={currentUser}
         isDark={isDark}
         onToggleTheme={toggleTheme}
-        onConnect={handleConnect}
+        onConnect={() => setShowWalletModal(true)}
         onDisconnect={handleDisconnect}
         onToggleDemoMode={handleEnableDemo}
         onSignInGoogle={handleSignInGoogle}
         onSignOutGoogle={handleSignOutGoogle}
+        onOpenWalletModal={() => setShowWalletModal(true)}
+        onOpenPlayStoreGuide={() => setShowPlayStoreGuide(true)}
       />
 
       {/* Main Content Area */}
@@ -498,14 +615,46 @@ export default function App() {
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
+            {/* Play Store & PWA Publication Status */}
+            <button
+              onClick={() => setShowPlayStoreGuide(true)}
+              className="px-3 py-1.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/50 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 border border-emerald-200 dark:border-emerald-800 text-xs font-semibold text-emerald-800 dark:text-emerald-300 transition flex items-center gap-1.5 cursor-pointer shadow-2xs"
+              title="Google Play Store & PWA Publishing details"
+            >
+              <Smartphone className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
+              <span>Play Store Ready</span>
+            </button>
+
+            <button
+              id="safest-path-status-btn"
+              onClick={() => setShowWalletModal(true)}
+              className={`px-3 py-1.5 rounded-xl border text-xs font-semibold transition flex items-center gap-1.5 cursor-pointer shadow-2xs ${
+                wallet.isConnected && !wallet.isDemoMode
+                  ? "bg-indigo-50 dark:bg-indigo-950/50 text-indigo-700 dark:text-indigo-300 border-indigo-200 dark:border-indigo-800"
+                  : "bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700"
+              }`}
+              title="Click to connect MetaMask or view security mode"
+            >
+              <span className="text-sm leading-none">🦊</span>
+              <span>
+                {wallet.isConnected && !wallet.isDemoMode
+                  ? wallet.networkName.includes("Google")
+                    ? "Google Cloud Vault Active"
+                    : wallet.networkName.includes("Device")
+                    ? "Device Vault Active"
+                    : "MetaMask Sepolia Active"
+                  : "Connect Vault / Wallet"}
+              </span>
+            </button>
+
             {!currentUser && (
               <button
                 onClick={handleSignInGoogle}
                 className="px-3 py-1.5 rounded-xl bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 text-xs font-medium text-slate-700 dark:text-slate-200 transition flex items-center gap-1.5 cursor-pointer shadow-2xs"
               >
                 <LogIn className="h-3.5 w-3.5 text-indigo-600 dark:text-indigo-400" />
-                <span>Sign in with Google to sync cloud</span>
+                <span>Sign in with Google</span>
               </button>
             )}
 
@@ -532,7 +681,7 @@ export default function App() {
         <UploadSection
           wallet={wallet}
           onUploadSuccess={handleUploadSuccess}
-          onRequireConnect={handleConnect}
+          onRequireConnect={() => setShowWalletModal(true)}
         />
 
         {/* Divider */}
@@ -588,6 +737,28 @@ export default function App() {
         onOpenCREModal={() => setShowCREModal(true)}
       />
 
+      {/* Wallet Connect & Security Identity Modal */}
+      <WalletConnectModal
+        isOpen={showWalletModal}
+        onClose={() => setShowWalletModal(false)}
+        wallet={wallet}
+        currentUser={currentUser}
+        onConnect={handleConnect}
+        onEnableDemo={handleEnableDemo}
+        onEnableDeviceVault={handleEnableDeviceVault}
+        onSignInGoogle={handleSignInGoogle}
+        onDisconnect={handleDisconnect}
+      />
+
+      {/* Google Play Store & TWA Publication Guide Modal */}
+      <PlayStoreGuideModal
+        isOpen={showPlayStoreGuide}
+        onClose={() => setShowPlayStoreGuide(false)}
+      />
+
+      {/* Offline Status Connectivity Banner */}
+      <OfflineIndicator />
+
       {/* Clean Footer */}
       <footer className="border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 py-6 mt-auto text-xs text-slate-500 dark:text-slate-400 transition-colors">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-4">
@@ -601,6 +772,14 @@ export default function App() {
               <span className="px-1.5 py-0.5 rounded text-[10px] bg-indigo-50 dark:bg-indigo-950/80 text-indigo-700 dark:text-indigo-300 font-mono">
                 7 Goals
               </span>
+            </button>
+            <span>•</span>
+            <button
+              onClick={() => setShowPlayStoreGuide(true)}
+              className="text-emerald-600 dark:text-emerald-400 font-semibold hover:underline flex items-center gap-1 cursor-pointer"
+            >
+              <Smartphone className="h-3.5 w-3.5" />
+              <span>Google Play Store Guide</span>
             </button>
             <span>•</span>
             <span>Smart Contract:</span>

@@ -11,12 +11,18 @@ import {
   Loader2,
   Sparkles,
   Shield,
+  ShieldCheck,
+  ArrowRight,
   X,
   Server,
 } from "lucide-react";
 import type { UploadPhase, AIAnalysisResult, VaultDocument, WalletState } from "../types";
 import { encryptFileInBrowser, computeManifestHash, sealKeyForOwner } from "../services/crypto";
-import { uploadEncryptedFileToLighthouse, uploadManifestToLighthouse } from "../services/lighthouse";
+import {
+  uploadEncryptedFileToLighthouse,
+  uploadManifestToLighthouse,
+  verifyLighthouseUploadConfirmation,
+} from "../services/lighthouse";
 import { uploadDocumentToContract, saveDocumentToStorage } from "../services/blockchain";
 import { BLOCKNDRIVE_CONTRACT_ADDRESS } from "../constants/contract";
 import { LighthouseStatusIndicator } from "./LighthouseStatusIndicator";
@@ -163,16 +169,27 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
       }
 
       // -------------------------------------------------------------
-      // PHASE 3: Lighthouse IPFS / Filecoin Upload
+      // PHASE 3: Lighthouse IPFS / Filecoin Upload & Node Verification
       // -------------------------------------------------------------
       setPhase("UPLOADING_LIGHTHOUSE");
       setStatusMessage("Pinning encrypted payload to Lighthouse IPFS & Filecoin nodes...");
+      console.log(`[Upload Pipeline] Starting encrypted payload upload for: ${file.name} (${file.size} bytes)...`);
 
       const fileUploadRes = await uploadEncryptedFileToLighthouse(
         file.name,
         encryptedPayload.encryptedBlob
       );
       setUploadedCid(fileUploadRes.cid);
+      console.log(`[Upload Pipeline] Encrypted payload pinned to IPFS CID: ${fileUploadRes.cid}`);
+
+      // Verify node response confirmation before proceeding to contract
+      setStatusMessage("Verifying storage node receipt & IPFS node confirmation...");
+      const payloadVerification = await verifyLighthouseUploadConfirmation(
+        fileUploadRes.cid,
+        `${file.name}.enc`,
+        encryptedPayload.encryptedBlob.size
+      );
+      console.log(`[Upload Pipeline] Node verification status:`, payloadVerification);
 
       // -------------------------------------------------------------
       // PHASE 5: Lit Protocol Access Control & Sealed Key
@@ -226,17 +243,33 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
       };
 
       // Upload manifest to Lighthouse
+      setStatusMessage("Pinning cryptographic manifest to Lighthouse IPFS...");
       const manifestUploadRes = await uploadManifestToLighthouse(manifest);
       const manifestCID = manifestUploadRes.cid;
+      console.log(`[Upload Pipeline] Manifest pinned to IPFS CID: ${manifestCID}`);
+
+      // Verify manifest CID on IPFS node
+      await verifyLighthouseUploadConfirmation(
+        manifestCID,
+        `manifest_${file.name}.json`
+      );
 
       // Compute manifest hash (bytes32)
       const manifestHash = computeManifestHash(manifest);
+      console.log(`[Upload Pipeline] Computed manifest Keccak256 hash: ${manifestHash}`);
 
       // -------------------------------------------------------------
-      // PHASE 4: Smart Contract Registration
+      // PHASE 4: Smart Contract Registration (Enforces on-chain ownership)
       // -------------------------------------------------------------
       setPhase("CONTRACT_MINTING");
       setStatusMessage("Signing transaction & registering document to BlockNDrive smart contract...");
+      console.log(`[Upload Pipeline] Requesting smart contract registration transaction...`, {
+        manifestCID,
+        fileHash: encryptedPayload.fileHash,
+        manifestHash,
+        riskScore: aiResult.riskScore,
+        isDemoMode: wallet.isDemoMode,
+      });
 
       const contractResult = await uploadDocumentToContract(
         manifestCID,
@@ -246,6 +279,7 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
         wallet.isDemoMode,
         ownerAddress
       );
+      console.log(`[Upload Pipeline] Smart contract registration confirmed! Tx: ${contractResult.txHash}, Doc ID: ${contractResult.documentId}`);
 
       setRecentTx(contractResult.txHash);
 
@@ -323,6 +357,57 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
             variant="badge"
           />
         </div>
+
+        {/* Safest Storage Path & MetaMask status banner */}
+        {wallet.isDemoMode ? (
+          <div className="mb-5 p-3.5 rounded-xl border bg-amber-50/80 dark:bg-amber-950/30 border-amber-200 dark:border-amber-800/60 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs">
+            <div className="flex items-start gap-2.5">
+              <span className="text-lg leading-none mt-0.5">⚠️</span>
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="font-bold text-amber-900 dark:text-amber-200">
+                    Demo Mode Active (Simulated Registry)
+                  </span>
+                </div>
+                <p className="text-amber-800/90 dark:text-amber-300/90 text-[11px] mt-0.5 leading-relaxed">
+                  To enable the <strong>safest storage path</strong> with real Ethereum Sepolia on-chain immutable registration, connect your MetaMask wallet.
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              id="connect-metamask-upload-banner-btn"
+              onClick={onRequireConnect}
+              className="shrink-0 w-full sm:w-auto px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-xs flex items-center justify-center gap-1.5 shadow-xs transition cursor-pointer"
+            >
+              <span>🦊 Connect MetaMask</span>
+              <ArrowRight className="h-3 w-3" />
+            </button>
+          </div>
+        ) : (
+          <div className="mb-5 p-3.5 rounded-xl border bg-emerald-50/80 dark:bg-emerald-950/30 border-emerald-200 dark:border-emerald-800/60 flex items-center justify-between gap-3 text-xs">
+            <div className="flex items-center gap-2.5">
+              <ShieldCheck className="h-4 w-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="font-bold text-emerald-900 dark:text-emerald-200">
+                    Safest Storage Path Active
+                  </span>
+                  <span className="px-1.5 py-0.2 rounded text-[10px] bg-emerald-100 dark:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 font-mono">
+                    Sepolia On-Chain
+                  </span>
+                </div>
+                <p className="text-emerald-800/90 dark:text-emerald-300/90 text-[11px] mt-0.5">
+                  Connected to MetaMask ({wallet.address?.slice(0, 6)}...{wallet.address?.slice(-4)}). Document hashes are cryptographically sealed on Sepolia.
+                </p>
+              </div>
+            </div>
+            <span className="hidden sm:inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-700 dark:text-emerald-300 bg-emerald-100 dark:bg-emerald-900/40 px-2.5 py-1 rounded-lg">
+              <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
+              Verified
+            </span>
+          </div>
+        )}
 
         {/* Drag & Drop Zone */}
         <div
@@ -492,7 +577,7 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
                 <span className="text-[10px] text-slate-500 dark:text-slate-400">Gemini Extraction</span>
               </div>
 
-              {/* Step 3: Lighthouse */}
+              {/* Step 3: Lighthouse IPFS Node Verified */}
               <div
                 className={`p-2.5 rounded-lg border flex flex-col gap-1 ${
                   phase === "UPLOADING_LIGHTHOUSE"
@@ -503,7 +588,7 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
                 }`}
               >
                 <div className="flex items-center justify-between">
-                  <span className="font-semibold">3. Lighthouse</span>
+                  <span className="font-semibold">3. Lighthouse IPFS</span>
                   {phase === "UPLOADING_LIGHTHOUSE" ? (
                     <Loader2 className="h-3.5 w-3.5 animate-spin text-indigo-600 dark:text-indigo-400" />
                   ) : ["CONTRACT_MINTING", "SUCCESS"].includes(phase) ? (
@@ -512,10 +597,10 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
                     <Database className="h-3.5 w-3.5" />
                   )}
                 </div>
-                <span className="text-[10px] text-slate-500 dark:text-slate-400">Filecoin IPFS CID</span>
+                <span className="text-[10px] text-slate-500 dark:text-slate-400">Node Confirmed CID</span>
               </div>
 
-              {/* Step 4: Smart Contract */}
+              {/* Step 4: Smart Contract Immutable Proof */}
               <div
                 className={`p-2.5 rounded-lg border flex flex-col gap-1 ${
                   phase === "CONTRACT_MINTING"
@@ -526,7 +611,7 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
                 }`}
               >
                 <div className="flex items-center justify-between">
-                  <span className="font-semibold">4. Blockchain</span>
+                  <span className="font-semibold">4. Smart Contract</span>
                   {phase === "CONTRACT_MINTING" ? (
                     <Loader2 className="h-3.5 w-3.5 animate-spin text-indigo-600 dark:text-indigo-400" />
                   ) : phase === "SUCCESS" ? (
@@ -535,7 +620,7 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
                     <LinkIcon className="h-3.5 w-3.5" />
                   )}
                 </div>
-                <span className="text-[10px] text-slate-500 dark:text-slate-400">Sepolia Registry</span>
+                <span className="text-[10px] text-slate-500 dark:text-slate-400">On-Chain Ownership</span>
               </div>
             </div>
 

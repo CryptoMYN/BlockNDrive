@@ -1,0 +1,12 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.blockndrive.vault",
+      "sha256_cert_fingerprints": [
+        "36:FB:9E:B8:A4:1C:B0:CD:DA:91:4C:A7:AC:0E:7E:0F:07:DF:3E:57:00:00:00:00:00:00:00:00:00:00:00:00"
+      ]
+    }
+  }
+]

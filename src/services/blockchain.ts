@@ -14,11 +14,42 @@ declare global {
 }
 
 /**
+ * Detect if application is currently embedded in an iframe (e.g. AI Studio preview)
+ */
+export function isRunningInIframe(): boolean {
+  try {
+    return typeof window !== "undefined" && window.self !== window.top;
+  } catch {
+    return true;
+  }
+}
+
+/**
+ * Get active MetaMask or EIP-1193 Ethereum provider
+ */
+export function getMetaMaskProvider(): any {
+  if (typeof window === "undefined" || !window.ethereum) return null;
+  if (window.ethereum.providers && Array.isArray(window.ethereum.providers)) {
+    const mm = window.ethereum.providers.find((p: any) => p.isMetaMask);
+    if (mm) return mm;
+  }
+  return window.ethereum;
+}
+
+/**
+ * Check whether MetaMask or compatible Web3 provider is detected
+ */
+export function isMetaMaskDetected(): boolean {
+  return !!getMetaMaskProvider();
+}
+
+/**
  * Get provider from window.ethereum or Sepolia public RPC
  */
 export function getBrowserProvider(): ethers.BrowserProvider | null {
-  if (typeof window !== "undefined" && window.ethereum) {
-    return new ethers.BrowserProvider(window.ethereum);
+  const eth = getMetaMaskProvider();
+  if (eth) {
+    return new ethers.BrowserProvider(eth);
   }
   return null;
 }
@@ -38,19 +69,30 @@ export async function connectMetaMask(): Promise<{
   chainId: number;
   balance: string;
 }> {
-  if (!window.ethereum) {
-    throw new Error("MetaMask is not installed. Please install MetaMask or use Demo Mode.");
+  const ethProvider = getMetaMaskProvider();
+  if (!ethProvider) {
+    if (isRunningInIframe()) {
+      throw new Error(
+        "MetaMask extension was not detected inside this preview iframe. Browser extensions are restricted from injecting into iframes. Please open the app in a new tab to connect MetaMask."
+      );
+    }
+    throw new Error("MetaMask is not installed. Please install the MetaMask browser extension or use Demo Mode.");
   }
 
-  const provider = new ethers.BrowserProvider(window.ethereum);
+  const provider = new ethers.BrowserProvider(ethProvider);
   const accounts = await provider.send("eth_requestAccounts", []);
   if (!accounts || accounts.length === 0) {
-    throw new Error("No accounts selected in MetaMask");
+    throw new Error("No accounts selected in MetaMask. Please approve the connection request in MetaMask.");
   }
 
   const network = await provider.getNetwork();
-  const balanceWei = await provider.getBalance(accounts[0]);
-  const balance = ethers.formatEther(balanceWei);
+  let balance = "0.0000";
+  try {
+    const balanceWei = await provider.getBalance(accounts[0]);
+    balance = ethers.formatEther(balanceWei);
+  } catch (balErr) {
+    console.warn("Could not fetch balance:", balErr);
+  }
 
   return {
     address: accounts[0],
@@ -340,7 +382,7 @@ export async function fetchUserDocuments(
 /**
  * Local persistence helpers with 24-hour auto-purge cleanup
  */
-export function getStoredDocuments(): VaultDocument[] {
+export function getStoredDocuments(includeDemoFallback = false): VaultDocument[] {
   const RETENTION_PERIOD_MS = 24 * 60 * 60 * 1000; // 24 hours
   const now = Date.now();
 
@@ -369,9 +411,19 @@ export function getStoredDocuments(): VaultDocument[] {
     // ignore
   }
 
-  // Pre-seed sample documents if first load to match the diverse file types:
-  // PDF, Image, Spreadsheet, Code, and Document
-  const initialDocs: VaultDocument[] = [
+  // If user explicitly requests demo files or is in sandbox demo mode
+  if (includeDemoFallback) {
+    return SAMPLE_DEMO_DOCUMENTS;
+  }
+
+  // Real production users start with an empty clean vault
+  return [];
+}
+
+/**
+ * Pre-seeded sample documents for Sandbox Demo Mode
+ */
+export const SAMPLE_DEMO_DOCUMENTS: VaultDocument[] = [
     {
       id: 1,
       owner: "0x71C...Demo",
@@ -669,12 +721,23 @@ export function getStoredDocuments(): VaultDocument[] {
     },
   ];
 
-  localStorage.setItem("blockndrive_documents", JSON.stringify(initialDocs));
-  return initialDocs;
+/**
+ * Explicitly load sample demo documents into local storage (for testing/demo)
+ */
+export function loadSampleDemoDocuments(): VaultDocument[] {
+  localStorage.setItem("blockndrive_documents", JSON.stringify(SAMPLE_DEMO_DOCUMENTS));
+  return SAMPLE_DEMO_DOCUMENTS;
+}
+
+/**
+ * Clear stored documents
+ */
+export function clearStoredDocuments(): void {
+  localStorage.removeItem("blockndrive_documents");
 }
 
 export function saveDocumentToStorage(doc: VaultDocument): void {
-  const current = getStoredDocuments();
+  const current = getStoredDocuments(false);
   const index = current.findIndex((d) => d.id === doc.id);
   if (index >= 0) {
     current[index] = doc;

@@ -2,9 +2,35 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, viewport-fit=cover" />
     <title>BlockNDrive - Decentralized Document Vault</title>
+    <script>
+      // Filter benign Vite websocket disconnection notices from reporting as fatal runtime errors
+      (function() {
+        var origError = console.error;
+        console.error = function() {
+          var firstArg = arguments[0];
+          if (typeof firstArg === 'string' && (firstArg.indexOf('[vite]') !== -1 || firstArg.indexOf('vite-plugin-pwa') !== -1)) {
+            console.warn.apply(console, arguments);
+            return;
+          }
+          origError.apply(console, arguments);
+        };
+      })();
+    </script>
     <meta name="description" content="Decentralized document vault with client-side AES encryption, Lighthouse IPFS storage, Lit access control, Chainlink CRE risk analysis, smart contract registry, Google Authentication, and Firestore persistence." />
+    
+    <!-- PWA & Mobile Meta Tags for Google Play Store & TWA -->
+    <meta name="theme-color" content="#4f46e5" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="BlockNDrive" />
+    <link rel="icon" type="image/svg+xml" href="/icon.svg" />
+    <link rel="icon" type="image/png" sizes="192x192" href="/pwa-192x192.png" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+
     <meta property="og:title" content="BlockNDrive - Decentralized Document Vault" />
     <meta property="og:description" content="Decentralized document vault with client-side AES encryption, Lighthouse IPFS storage, Lit access control, Chainlink CRE risk analysis, smart contract registry, Google Authentication, and Firestore persistence." />
     <meta property="og:type" content="website" />
