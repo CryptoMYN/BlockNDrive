@@ -13,7 +13,6 @@ import {
   RefreshCw,
   Loader2,
   CheckCircle2,
-  Shapes,
   Image as ImageIcon,
   X,
   Sparkles,
@@ -40,7 +39,6 @@ import { fetchEncryptedFileFromIPFS } from "../services/lighthouse";
 import { decryptFileInBrowser, unsealKeyForOwner } from "../services/crypto";
 import { deleteDocumentOnContract } from "../services/blockchain";
 import { HIGH_RISK_THRESHOLD } from "../constants/contract";
-import { generateGeometricPlaceholder, type PatternResult } from "../utils/imageGenerator";
 import { getFileVisualConfig, type DetectedFileType } from "../utils/fileTypeHelper";
 import { EncryptedSecurityBadge } from "./EncryptedSecurityBadge";
 import { logDocumentActivity } from "../lib/firebase";
@@ -144,44 +142,6 @@ export const DocumentList: React.FC<DocumentListProps> = ({
       remainingMs,
       text: remainingMs <= 0 ? "Expiring now" : `${hours}h ${mins}m left`,
     };
-  };
-
-  // Quick View pattern generator state
-  const [quickViewPatterns, setQuickViewPatterns] = useState<Record<number, PatternResult>>({});
-  const [activeQuickViewDocId, setActiveQuickViewDocId] = useState<number | null>(null);
-  const [generatingPatternId, setGeneratingPatternId] = useState<number | null>(null);
-
-  const handleToggleQuickView = (doc: VaultDocument, forceRegenerate = false) => {
-    if (activeQuickViewDocId === doc.id && !forceRegenerate) {
-      setActiveQuickViewDocId(null);
-      return;
-    }
-
-    setActiveQuickViewDocId(doc.id);
-
-    if (quickViewPatterns[doc.id] && !forceRegenerate) {
-      return;
-    }
-
-    setGeneratingPatternId(doc.id);
-
-    setTimeout(() => {
-      const fileName = doc.manifest?.name || `document_${doc.id}.pdf`;
-      const mimeType = doc.manifest?.mimeType;
-      const pattern = generateGeometricPlaceholder({
-        fileName,
-        mimeType,
-        width: 380,
-        height: 220,
-        customSeed: forceRegenerate ? Math.floor(Math.random() * 999999) : undefined,
-      });
-
-      setQuickViewPatterns((prev) => ({
-        ...prev,
-        [doc.id]: pattern,
-      }));
-      setGeneratingPatternId(null);
-    }, 60);
   };
 
   // Compute stats across file types in current tab pool
@@ -332,7 +292,7 @@ export const DocumentList: React.FC<DocumentListProps> = ({
   const handleArchiveSingle = async (doc: VaultDocument) => {
     setDeletingId(doc.id);
     try {
-      await deleteDocumentOnContract(doc.id, wallet.isDemoMode);
+      await deleteDocumentOnContract(doc.id);
       onDocumentDeleted(doc.id);
       setArchiveModalDoc(null);
       setFeedbackMsg({ id: doc.id, text: "Moved to 24-Hour Archive." });
@@ -914,7 +874,7 @@ export const DocumentList: React.FC<DocumentListProps> = ({
 
             return (
               <div
-                key={doc.id}
+                key={`doc-row-${doc.id}-${doc.fileHash}`}
                 id={`document-item-${doc.id}`}
                 className={`p-4 sm:p-5 transition group border-l-4 ${
                   isSelected
@@ -925,7 +885,7 @@ export const DocumentList: React.FC<DocumentListProps> = ({
                 }`}
               >
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                  {/* Left info: Checkbox, Icon, Name, Date, Size, Risk, Countdown */}
+                  {/* Left info: Checkbox, Name, File Type, Date, Size, Risk, Countdown */}
                   <div className="flex items-start gap-3 min-w-0">
                     {/* Individual Document Selection Checkbox */}
                     <button
@@ -935,7 +895,7 @@ export const DocumentList: React.FC<DocumentListProps> = ({
                         e.stopPropagation();
                         handleToggleSelect(doc.id);
                       }}
-                      className={`mt-2 sm:mt-2.5 h-5 w-5 rounded-md border flex items-center justify-center transition-all cursor-pointer shrink-0 ${
+                      className={`mt-1 sm:mt-1.5 h-5 w-5 rounded-md border flex items-center justify-center transition-all cursor-pointer shrink-0 ${
                         isSelected
                           ? "bg-indigo-600 border-indigo-600 text-white shadow-xs"
                           : "border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 hover:border-indigo-400 dark:hover:border-indigo-500"
@@ -945,17 +905,6 @@ export const DocumentList: React.FC<DocumentListProps> = ({
                     >
                       {isSelected && <Check className="h-3.5 w-3.5 stroke-[3]" />}
                     </button>
-
-                    {/* Distinct File Type Icon Box */}
-                    <div
-                      className={`p-2.5 rounded-xl ${fileVisual.bgClass} ${fileVisual.textClass} border ${fileVisual.borderClass} shrink-0 mt-0.5 relative group-hover:scale-105 transition-all duration-200 shadow-xs flex items-center justify-center`}
-                      title={`${fileVisual.label} (.${fileVisual.extension.toLowerCase()})`}
-                    >
-                      <FileIcon className="h-5 w-5" />
-                      <span className="absolute -bottom-1 -right-1 bg-slate-900/90 dark:bg-slate-950 text-white text-[8px] font-mono font-bold px-1 py-0.2 rounded shadow-xs leading-tight tracking-wider border border-white/15">
-                        {fileVisual.extension}
-                      </span>
-                    </div>
 
                     <div className="min-w-0 space-y-1">
                       <div className="flex items-center gap-2 flex-wrap">
@@ -994,20 +943,6 @@ export const DocumentList: React.FC<DocumentListProps> = ({
                             <span>{expireInfo.text}</span>
                           </span>
                         )}
-
-                        {/* Quick-view icon representing file type */}
-                        <button
-                          id={`quick-view-icon-${doc.id}`}
-                          onClick={() => handleToggleQuickView(doc)}
-                          className={`p-1 rounded-lg transition cursor-pointer flex items-center gap-1 ${
-                            activeQuickViewDocId === doc.id
-                              ? "bg-indigo-100 dark:bg-indigo-950 text-indigo-600 dark:text-indigo-400"
-                              : "text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-slate-100 dark:hover:bg-slate-800"
-                          }`}
-                          title="Quick View: Generate geometric pattern placeholder"
-                        >
-                          <Shapes className="h-3.5 w-3.5" />
-                        </button>
 
                         {/* Risk score badge */}
                         <span
@@ -1078,20 +1013,6 @@ export const DocumentList: React.FC<DocumentListProps> = ({
                   <div className="flex items-center gap-2 self-end sm:self-center shrink-0 flex-wrap">
                     {activeTab === "active" ? (
                       <>
-                        <button
-                          id={`quick-view-btn-${doc.id}`}
-                          onClick={() => handleToggleQuickView(doc)}
-                          className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition cursor-pointer flex items-center gap-1.5 ${
-                            activeQuickViewDocId === doc.id
-                              ? "bg-indigo-600 text-white shadow-xs"
-                              : "bg-indigo-50 dark:bg-indigo-950/60 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200/80 dark:border-indigo-800/80"
-                          }`}
-                          title="Generate geometric pattern placeholder for file type"
-                        >
-                          <Shapes className="h-3.5 w-3.5" />
-                          <span>Quick View</span>
-                        </button>
-
                         <button
                           id={`view-btn-${doc.id}`}
                           onClick={() => onSelectDocument(doc)}
@@ -1176,120 +1097,7 @@ export const DocumentList: React.FC<DocumentListProps> = ({
                   </div>
                 </div>
 
-                {/* Inline Quick-View Generated Geometric Image Placeholder Display */}
-                {activeQuickViewDocId === doc.id && (
-                  <div
-                    id={`quick-view-container-${doc.id}`}
-                    className="mt-4 pt-4 border-t border-slate-100 dark:border-slate-800/80 animate-in fade-in slide-in-from-top-2 duration-200"
-                  >
-                    <div className="bg-slate-50 dark:bg-slate-950/80 rounded-2xl p-4 border border-slate-200/80 dark:border-slate-800 flex flex-col sm:flex-row items-start sm:items-center gap-4.5">
-                      {/* Generated Geometric Placeholder Thumbnail */}
-                      <div className="relative shrink-0 rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800 shadow-xs bg-slate-900 group/thumb">
-                        {generatingPatternId === doc.id ? (
-                          <div className="w-56 h-32 flex flex-col items-center justify-center gap-2 bg-slate-900 text-slate-400">
-                            <Loader2 className="h-5 w-5 animate-spin text-indigo-400" />
-                            <span className="text-[11px] font-mono">Generating pattern...</span>
-                          </div>
-                        ) : quickViewPatterns[doc.id] ? (
-                          <div className="relative">
-                            <img
-                              src={quickViewPatterns[doc.id].dataUrl}
-                              alt={`Geometric pattern placeholder for ${fileName}`}
-                              className="w-56 sm:w-64 h-auto max-h-40 object-cover rounded-xl transition duration-200"
-                            />
-                            <div className="absolute top-2 left-2 bg-black/70 backdrop-blur-xs px-2 py-0.5 rounded-md text-[10px] font-mono text-white flex items-center gap-1.5 border border-white/10">
-                              <span
-                                className="w-1.5 h-1.5 rounded-full"
-                                style={{ backgroundColor: quickViewPatterns[doc.id].dominantColor }}
-                              />
-                              <span>{quickViewPatterns[doc.id].fileExtension}</span>
-                            </div>
-                          </div>
-                        ) : (
-                          <div className="w-56 h-32 flex items-center justify-center bg-slate-900 text-slate-500 text-xs font-mono">
-                            Pattern ready
-                          </div>
-                        )}
-                      </div>
 
-                      {/* File Type & Algorithmic Pattern Details */}
-                      {quickViewPatterns[doc.id] && (
-                        <div className="flex-1 min-w-0 space-y-2 text-xs">
-                          <div className="flex items-start justify-between gap-2">
-                            <div>
-                              <div className="flex items-center gap-2 flex-wrap">
-                                <span className="px-2 py-0.5 rounded-md font-semibold text-[10px] uppercase tracking-wider bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800">
-                                  {quickViewPatterns[doc.id].category}
-                                </span>
-                                <span className="font-semibold text-slate-800 dark:text-slate-200">
-                                  {quickViewPatterns[doc.id].patternName}
-                                </span>
-                              </div>
-                              <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
-                                Algorithmic geometric placeholder generated for <span className="font-mono font-medium text-slate-700 dark:text-slate-300">.{quickViewPatterns[doc.id].fileExtension.toLowerCase()}</span> file type
-                              </p>
-                            </div>
-
-                            <button
-                              id={`close-quick-view-${doc.id}`}
-                              onClick={() => setActiveQuickViewDocId(null)}
-                              className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-1.5 rounded-lg hover:bg-slate-200/60 dark:hover:bg-slate-800 transition cursor-pointer"
-                              title="Close Quick View"
-                            >
-                              <X className="h-4 w-4" />
-                            </button>
-                          </div>
-
-                          {/* Pattern Specs: Palette, Resolution, Seed */}
-                          <div className="flex flex-wrap items-center gap-2.5 text-[11px] text-slate-500 dark:text-slate-400 font-mono bg-white dark:bg-slate-900 px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-800">
-                            <div className="flex items-center gap-1.5">
-                              <span className="font-sans text-slate-400">Palette:</span>
-                              <span
-                                className="w-2.5 h-2.5 rounded-full border border-black/10 dark:border-white/20"
-                                style={{ backgroundColor: quickViewPatterns[doc.id].dominantColor }}
-                                title="Dominant theme color"
-                              />
-                              <span
-                                className="w-2.5 h-2.5 rounded-full border border-black/10 dark:border-white/20"
-                                style={{ backgroundColor: quickViewPatterns[doc.id].accentColor }}
-                                title="Accent theme color"
-                              />
-                            </div>
-                            <span>•</span>
-                            <span>{quickViewPatterns[doc.id].dimensions.width}×{quickViewPatterns[doc.id].dimensions.height} PNG</span>
-                            <span>•</span>
-                            <span>Seed: #{quickViewPatterns[doc.id].seed.toString(16).toUpperCase()}</span>
-                          </div>
-
-                          {/* Action buttons: Regenerate & Download */}
-                          <div className="flex items-center gap-2 pt-0.5 flex-wrap">
-                            <button
-                              id={`regenerate-pattern-${doc.id}`}
-                              onClick={() => handleToggleQuickView(doc, true)}
-                              disabled={generatingPatternId === doc.id}
-                              className="px-2.5 py-1 bg-white dark:bg-slate-900 hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 rounded-lg text-[11px] font-semibold transition cursor-pointer flex items-center gap-1.5 disabled:opacity-50"
-                              title="Generate a new random geometric variation"
-                            >
-                              <RefreshCw className={`h-3 w-3 ${generatingPatternId === doc.id ? "animate-spin" : ""}`} />
-                              <span>Regenerate Pattern</span>
-                            </button>
-
-                            <a
-                              id={`download-placeholder-${doc.id}`}
-                              href={quickViewPatterns[doc.id].dataUrl}
-                              download={`${fileName.replace(/[^a-zA-Z0-9_-]/g, "_")}_placeholder.png`}
-                              className="px-2.5 py-1 bg-indigo-50 dark:bg-indigo-950/60 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 border border-indigo-200 dark:border-indigo-800 text-indigo-700 dark:text-indigo-300 rounded-lg text-[11px] font-semibold transition cursor-pointer flex items-center gap-1.5"
-                              title="Download placeholder image as PNG"
-                            >
-                              <Download className="h-3 w-3" />
-                              <span>Download Image</span>
-                            </a>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                )}
               </div>
             );
           })
@@ -1569,7 +1377,7 @@ export const DocumentList: React.FC<DocumentListProps> = ({
                 const Icon = config.Icon;
                 return (
                   <div
-                    key={doc.id}
+                    key={`modal-selected-doc-${doc.id}-${doc.fileHash}`}
                     className="flex items-center justify-between text-xs py-1.5 px-2.5 rounded-lg bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800"
                   >
                     <div className="flex items-center gap-2 min-w-0 pr-2">

@@ -217,6 +217,43 @@ export const BLOCKNDRIVE_ABI = [
         type: "uint256",
       },
       {
+        indexed: true,
+        internalType: "address",
+        name: "owner",
+        type: "address",
+      },
+      {
+        indexed: false,
+        internalType: "string",
+        name: "manifestCID",
+        type: "string",
+      },
+      {
+        indexed: true,
+        internalType: "bytes32",
+        name: "fileHash",
+        type: "bytes32",
+      },
+      {
+        indexed: false,
+        internalType: "bytes32",
+        name: "manifestHash",
+        type: "bytes32",
+      },
+    ],
+    name: "DocumentRegistered",
+    type: "event",
+  },
+  {
+    anonymous: false,
+    inputs: [
+      {
+        indexed: true,
+        internalType: "uint256",
+        name: "documentId",
+        type: "uint256",
+      },
+      {
         indexed: false,
         internalType: "uint8",
         name: "riskScore",

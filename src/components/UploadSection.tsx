@@ -1,7 +1,7 @@
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import {
   UploadCloud,
-  FileText,
+  File,
   Lock,
   Cpu,
   Database,
@@ -9,199 +9,318 @@ import {
   CheckCircle2,
   AlertTriangle,
   Loader2,
-  Sparkles,
-  Shield,
-  ShieldCheck,
-  ArrowRight,
   X,
-  Server,
+  ExternalLink,
+  ShieldCheck,
+  Sparkles,
+  ArrowRight,
+  Info,
+  Fuel,
+  Wallet,
+  Zap,
+  Clock,
+  Wifi,
 } from "lucide-react";
-import type { UploadPhase, AIAnalysisResult, VaultDocument, WalletState } from "../types";
-import { encryptFileInBrowser, computeManifestHash, sealKeyForOwner } from "../services/crypto";
+import type {
+  VaultDocument,
+  UploadPhase,
+  AIAnalysisResult,
+  WalletState,
+  UploadPerformanceMetrics,
+} from "../types";
+import { encryptFileAES } from "../services/crypto";
+import { analyzeDocumentWithCRE } from "../services/chainlinkCRE";
 import {
   uploadEncryptedFileToLighthouse,
   uploadManifestToLighthouse,
   verifyLighthouseUploadConfirmation,
 } from "../services/lighthouse";
-import { uploadDocumentToContract, saveDocumentToStorage } from "../services/blockchain";
+import { sealKeyForOwner, computeManifestHash } from "../services/lit";
+import {
+  uploadDocumentToContract,
+  saveDocumentToStorage,
+} from "../services/blockchain";
+import {
+  UploadPerformanceTracker,
+  formatBytes,
+  formatDuration,
+} from "../services/performanceTracker";
 import { BLOCKNDRIVE_CONTRACT_ADDRESS } from "../constants/contract";
+import { auth, seedInitialAuditLogsIfEmpty } from "../lib/firebase";
 import { LighthouseStatusIndicator } from "./LighthouseStatusIndicator";
 import { LighthouseStorageManagerModal } from "./LighthouseStorageManagerModal";
-import { seedInitialAuditLogsIfEmpty, auth } from "../lib/firebase";
+import { UploadPerformanceMetricsCard } from "./UploadPerformanceMetricsCard";
 
 interface UploadSectionProps {
   wallet: WalletState;
-  onUploadSuccess: (newDoc: VaultDocument) => void;
-  onRequireConnect: () => void;
+  onUploadSuccess: (doc: VaultDocument) => void;
+  onRequireConnect?: () => void;
+  onOpenFaucetModal?: () => void;
 }
 
 export const UploadSection: React.FC<UploadSectionProps> = ({
   wallet,
   onUploadSuccess,
   onRequireConnect,
+  onOpenFaucetModal,
 }) => {
   const [file, setFile] = useState<File | null>(null);
-  const [isDragging, setIsDragging] = useState(false);
+  const [isDragging, setIsDragging] = useState<boolean>(false);
   const [phase, setPhase] = useState<UploadPhase>("IDLE");
   const [statusMessage, setStatusMessage] = useState<string>("");
-  const [aiPreview, setAiPreview] = useState<AIAnalysisResult | null>(null);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [uploadedCid, setUploadedCid] = useState<string | null>(null);
   const [recentTx, setRecentTx] = useState<string | null>(null);
-  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [aiPreview, setAiPreview] = useState<AIAnalysisResult | null>(null);
   const [showLighthouseModal, setShowLighthouseModal] = useState<boolean>(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [performanceMetrics, setPerformanceMetrics] = useState<UploadPerformanceMetrics | null>(null);
+  const [activeStepId, setActiveStepId] = useState<string | undefined>(undefined);
+  const [elapsedTimer, setElapsedTimer] = useState<number>(0);
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      setFile(e.target.files[0]);
-      setErrorMsg(null);
-      setPhase("IDLE");
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const trackerRef = useRef<UploadPerformanceTracker | null>(null);
+  const timerIntervalRef = useRef<any>(null);
+
+  useEffect(() => {
+    if (phase !== "IDLE" && phase !== "SUCCESS" && phase !== "ERROR") {
+      const start = performance.now();
+      timerIntervalRef.current = setInterval(() => {
+        setElapsedTimer(Math.round((performance.now() - start) / 100) / 10);
+      }, 100);
+    } else {
+      if (timerIntervalRef.current) {
+        clearInterval(timerIntervalRef.current);
+        timerIntervalRef.current = null;
+      }
     }
-  };
+    return () => {
+      if (timerIntervalRef.current) clearInterval(timerIntervalRef.current);
+    };
+  }, [phase]);
 
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
     setIsDragging(true);
   };
 
-  const handleDragLeave = () => {
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
     setIsDragging(false);
   };
 
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
     setIsDragging(false);
-    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
       setFile(e.dataTransfer.files[0]);
       setErrorMsg(null);
-      setPhase("IDLE");
+    }
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files.length > 0) {
+      setFile(e.target.files[0]);
+      setErrorMsg(null);
     }
   };
 
   const clearSelectedFile = () => {
     setFile(null);
-    setErrorMsg(null);
     setPhase("IDLE");
+    setStatusMessage("");
+    setErrorMsg(null);
+    setUploadedCid(null);
+    setRecentTx(null);
     setAiPreview(null);
-    if (fileInputRef.current) fileInputRef.current.value = "";
+    setPerformanceMetrics(null);
+    setActiveStepId(undefined);
+    setElapsedTimer(0);
+    trackerRef.current = null;
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
   };
 
-  const formatFileSize = (bytes: number) => {
-    if (bytes === 0) return "0 Bytes";
-    const k = 1024;
-    const sizes = ["Bytes", "KB", "MB", "GB"];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
-  };
+  const isWalletReady = wallet.isConnected && !!wallet.address;
+  const hasZeroBalance = isWalletReady && (wallet.balance === "0.0000" || wallet.balance === "0" || !wallet.balance);
 
-  // Main 7-phase upload execution
+  // -----------------------------------------------------------------
+  // 5-PHASE STRICT ON-CHAIN GAS TIER UPLOAD PIPELINE WITH TELEMETRY
+  // -----------------------------------------------------------------
   const startUploadPipeline = async () => {
-    if (!file) return;
+    if (!file) {
+      setErrorMsg("Please select a file to upload.");
+      return;
+    }
 
-    if (!wallet.isConnected) {
-      onRequireConnect();
+    if (!isWalletReady) {
+      if (onRequireConnect) {
+        onRequireConnect();
+      } else {
+        setErrorMsg("MetaMask connection is required on On-Chain Gas Tier.");
+      }
+      return;
+    }
+
+    if (hasZeroBalance) {
+      setErrorMsg(
+        "Your Sepolia wallet balance is 0.0000 ETH. On-Chain Gas Tier requires a fraction of free Sepolia ETH for network gas. Click 'Claim Free Gas' below to get testnet tokens in seconds."
+      );
       return;
     }
 
     setErrorMsg(null);
+    setUploadedCid(null);
+    setRecentTx(null);
+    setElapsedTimer(0);
+
+    // Initialize Performance Tracker
+    const tracker = new UploadPerformanceTracker(
+      file.size,
+      file.name,
+      (updatedMetrics, activeStep) => {
+        setPerformanceMetrics(updatedMetrics);
+        if (activeStep) {
+          setActiveStepId(activeStep.id);
+        }
+      }
+    );
+    trackerRef.current = tracker;
 
     try {
       // -------------------------------------------------------------
-      // PHASE 2: AES Encryption in browser
+      // PHASE 1: Client-Side AES-256-GCM Encryption
       // -------------------------------------------------------------
       setPhase("ENCRYPTING_AES");
-      setStatusMessage("Encrypting file locally with AES-GCM 256-bit (Zero plaintext leak)...");
+      setStatusMessage("Generating cryptographic key & encrypting file locally via Web Crypto AES-GCM-256...");
+      tracker.startStep(
+        "aes_encryption",
+        "AES-256-GCM Local Encryption",
+        "crypto",
+        "Generating 256-bit AES key & 96-bit IV. Encrypting locally in browser..."
+      );
 
-      const encryptedPayload = await encryptFileInBrowser(file);
-
-      // Save encrypted file locally in cache so user can download anytime
-      const arrayBuf = await encryptedPayload.encryptedBlob.arrayBuffer();
-      // Store in memory or local session for fast decryption
-      (window as any)[`__cache_${encryptedPayload.fileHash}`] = arrayBuf;
+      const encryptedPayload = await encryptFileAES(file);
+      tracker.endStep(
+        "aes_encryption",
+        file.size,
+        `Generated ${formatBytes(encryptedPayload.encryptedBlob.size)} ciphertext locally (${encryptedPayload.performanceStats?.throughputFormatted || "Fast"})`
+      );
+      console.log(`[Upload Pipeline] AES-GCM-256 encryption complete for: ${file.name}`);
 
       // -------------------------------------------------------------
-      // PHASE 6: Chainlink CRE + Gemini AI Metadata Extraction & Risk Scoring
+      // PHASE 2: Chainlink CRE AI Risk Scoring
       // -------------------------------------------------------------
       setPhase("AI_ANALYZING");
-      setStatusMessage("Chainlink CRE: AI metadata extraction & risk evaluation...");
+      setStatusMessage("Dispatching document to Chainlink CRE AI for cryptographic risk scoring...");
+      tracker.startStep(
+        "chainlink_cre_ai",
+        "Chainlink CRE AI Risk Scoring",
+        "ai",
+        "Evaluating document structure, sensitivity, and credential exposure..."
+      );
 
-      // Sample a small slice for AI extraction if text-like
-      let sampleText = "";
-      if (file.type.includes("text") || file.name.endsWith(".txt") || file.name.endsWith(".json") || file.name.endsWith(".md")) {
+      let textSample = "";
+      if (file.type.includes("text") || file.name.endsWith(".txt") || file.name.endsWith(".json")) {
         try {
-          sampleText = await file.text();
+          textSample = await file.text();
         } catch {
           // ignore
         }
       }
 
-      let aiResult: AIAnalysisResult = {
-        classification: "Standard Document",
-        category: "General",
-        sensitivity: "Low",
-        summary: `Document "${file.name}" encrypted with AES-256 for BlockNDrive decentralized registry.`,
-        detectedEntities: [],
-        complianceFlags: [],
-        riskScore: 15,
-        riskLevel: "LOW",
-        reasoning: "Normal file characteristics. Standard safe storage tier.",
-        creWorkflowId: `0x${Array.from({ length: 32 }, () => Math.floor(Math.random() * 16).toString(16)).join("")}`,
-      };
-
-      try {
-        const aiResponse = await fetch("/api/analyze-document", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            fileName: file.name,
-            fileSize: file.size,
-            mimeType: file.type || "application/octet-stream",
-            sampleText: sampleText.slice(0, 1000),
-          }),
-        });
-
-        if (aiResponse.ok) {
-          aiResult = await aiResponse.json();
-          setAiPreview(aiResult);
-        }
-      } catch (aiErr) {
-        console.warn("AI metadata analysis fallback:", aiErr);
-      }
+      const aiResult: AIAnalysisResult = await analyzeDocumentWithCRE(
+        file.name,
+        file.size,
+        file.type,
+        textSample
+      );
+      setAiPreview(aiResult);
+      tracker.endStep(
+        "chainlink_cre_ai",
+        undefined,
+        `Risk assessed: ${aiResult.riskScore}/100 • Category: ${aiResult.category} (${aiResult.sensitivity} sensitivity)`
+      );
+      console.log(`[Upload Pipeline] Chainlink CRE score: ${aiResult.riskScore}/100`);
 
       // -------------------------------------------------------------
-      // PHASE 3: Lighthouse IPFS / Filecoin Upload & Node Verification
+      // PHASE 3: Lighthouse IPFS / Filecoin Upload
       // -------------------------------------------------------------
       setPhase("UPLOADING_LIGHTHOUSE");
-      setStatusMessage("Pinning encrypted payload to Lighthouse IPFS & Filecoin nodes...");
-      console.log(`[Upload Pipeline] Starting encrypted payload upload for: ${file.name} (${file.size} bytes)...`);
+      setStatusMessage("Streaming encrypted payload chunks to Lighthouse IPFS & Filecoin nodes...");
+      tracker.startStep(
+        "ipfs_upload",
+        "Lighthouse IPFS & Filecoin Upload",
+        "storage",
+        `Uploading ${formatBytes(encryptedPayload.encryptedBlob.size)} encrypted payload to IPFS...`
+      );
 
       const fileUploadRes = await uploadEncryptedFileToLighthouse(
         file.name,
         encryptedPayload.encryptedBlob
       );
       setUploadedCid(fileUploadRes.cid);
+      tracker.endStep(
+        "ipfs_upload",
+        encryptedPayload.encryptedBlob.size,
+        `Pinned to IPFS CID: ${fileUploadRes.cid.slice(0, 14)}... (${fileUploadRes.performanceStats?.throughputFormatted || "Uploaded"})`
+      );
       console.log(`[Upload Pipeline] Encrypted payload pinned to IPFS CID: ${fileUploadRes.cid}`);
 
-      // Verify node response confirmation before proceeding to contract
-      setStatusMessage("Verifying storage node receipt & IPFS node confirmation...");
-      const payloadVerification = await verifyLighthouseUploadConfirmation(
+      // Verify node receipt
+      setStatusMessage("Verifying storage node receipt & IPFS confirmation...");
+      tracker.startStep(
+        "ipfs_verify",
+        "IPFS Node Receipt & Gateway Probe",
+        "network",
+        "Checking multi-gateway resolution and storage node persistence..."
+      );
+      await verifyLighthouseUploadConfirmation(
         fileUploadRes.cid,
         `${file.name}.enc`,
         encryptedPayload.encryptedBlob.size
       );
-      console.log(`[Upload Pipeline] Node verification status:`, payloadVerification);
+      tracker.endStep(
+        "ipfs_verify",
+        undefined,
+        "Storage confirmation verified across decentralized gateway cluster"
+      );
 
       // -------------------------------------------------------------
-      // PHASE 5: Lit Protocol Access Control & Sealed Key
+      // PHASE 4: Lit Protocol Access Control & Sealed Key
       // -------------------------------------------------------------
-      setStatusMessage("Configuring Lit Protocol owner-only access control condition...");
+      setStatusMessage("Configuring Lit Protocol owner-only access condition...");
+      tracker.startStep(
+        "lit_key_sealing",
+        "Lit Protocol Key Encapsulation",
+        "access_control",
+        "Encapsulating symmetric AES key with on-chain EVM conditional rules..."
+      );
 
-      const ownerAddress = wallet.address || "0x71C...Demo";
+      const ownerAddress = wallet.address!;
       const sealedKeyHex = await sealKeyForOwner(
         encryptedPayload.rawKeyHex,
         ownerAddress,
         null
       );
+      tracker.endStep(
+        "lit_key_sealing",
+        undefined,
+        "Owner-only access conditions locked for wallet address"
+      );
+
+      // -------------------------------------------------------------
+      // PHASE 4b: Cryptographic Manifest Pinning
+      // -------------------------------------------------------------
+      tracker.startStep(
+        "manifest_upload",
+        "Cryptographic Manifest IPFS Pin",
+        "storage",
+        "Building gas-efficient manifest and pinning JSON to IPFS..."
+      );
+
+      // Get intermediate performance metrics to include inside the manifest
+      const interimMetrics = tracker.getMetrics();
 
       // Build gas-efficient Manifest JSON
       const manifest = {
@@ -237,6 +356,7 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
           originalName: file.name,
           encryptionAlgorithm: "AES-GCM-256" as const,
           storageProvider: "Lighthouse (Filecoin/IPFS)" as const,
+          performanceMetrics: interimMetrics,
         },
         aiAnalysis: aiResult,
         riskScore: aiResult.riskScore,
@@ -246,42 +366,51 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
       setStatusMessage("Pinning cryptographic manifest to Lighthouse IPFS...");
       const manifestUploadRes = await uploadManifestToLighthouse(manifest);
       const manifestCID = manifestUploadRes.cid;
-      console.log(`[Upload Pipeline] Manifest pinned to IPFS CID: ${manifestCID}`);
 
       // Verify manifest CID on IPFS node
       await verifyLighthouseUploadConfirmation(
         manifestCID,
         `manifest_${file.name}.json`
       );
+      tracker.endStep(
+        "manifest_upload",
+        JSON.stringify(manifest).length,
+        `Manifest CID: ${manifestCID.slice(0, 14)}...`
+      );
 
       // Compute manifest hash (bytes32)
       const manifestHash = computeManifestHash(manifest);
-      console.log(`[Upload Pipeline] Computed manifest Keccak256 hash: ${manifestHash}`);
 
       // -------------------------------------------------------------
-      // PHASE 4: Smart Contract Registration (Enforces on-chain ownership)
+      // PHASE 5: Real On-Chain Smart Contract Registration (Gas Tier)
       // -------------------------------------------------------------
       setPhase("CONTRACT_MINTING");
-      setStatusMessage("Signing transaction & registering document to BlockNDrive smart contract...");
-      console.log(`[Upload Pipeline] Requesting smart contract registration transaction...`, {
-        manifestCID,
-        fileHash: encryptedPayload.fileHash,
-        manifestHash,
-        riskScore: aiResult.riskScore,
-        isDemoMode: wallet.isDemoMode,
-      });
+      setStatusMessage("Confirm transaction in MetaMask: Broadcasting to Ethereum Sepolia smart contract with gas...");
+      tracker.startStep(
+        "contract_minting",
+        "Ethereum Sepolia Smart Contract Registry",
+        "blockchain",
+        "Submitting gas transaction via MetaMask and awaiting block confirmation..."
+      );
 
       const contractResult = await uploadDocumentToContract(
         manifestCID,
         encryptedPayload.fileHash,
         manifestHash,
-        aiResult.riskScore,
-        wallet.isDemoMode,
-        ownerAddress
+        aiResult.riskScore
       );
-      console.log(`[Upload Pipeline] Smart contract registration confirmed! Tx: ${contractResult.txHash}, Doc ID: ${contractResult.documentId}`);
+      console.log(`[Upload Pipeline] On-chain smart contract confirmed! Tx: ${contractResult.txHash}, Doc ID: ${contractResult.documentId}`);
 
       setRecentTx(contractResult.txHash);
+      tracker.endStep(
+        "contract_minting",
+        undefined,
+        `Confirmed on Sepolia in Doc #${contractResult.documentId} (Tx: ${contractResult.txHash.slice(0, 10)}...)`
+      );
+
+      const finalPerformanceMetrics = tracker.getMetrics();
+      setPerformanceMetrics(finalPerformanceMetrics);
+      setActiveStepId(undefined);
 
       // Complete Document Object
       const newDoc: VaultDocument = {
@@ -297,6 +426,10 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
         txHash: contractResult.txHash,
         manifest: {
           ...manifest,
+          metadata: {
+            ...manifest.metadata,
+            performanceMetrics: finalPerformanceMetrics,
+          },
           accessControl: {
             ...manifest.accessControl,
             condition: {
@@ -309,7 +442,6 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
 
       // Store in persistence
       saveDocumentToStorage(newDoc);
-      // Cache manifest and unsealed key in session storage for immediate owner download
       localStorage.setItem(`blockndrive_manifest_${manifestCID}`, JSON.stringify(newDoc.manifest));
       localStorage.setItem(`blockndrive_key_${encryptedPayload.fileHash}`, encryptedPayload.rawKeyHex);
 
@@ -319,15 +451,23 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
       );
 
       setPhase("SUCCESS");
-      setStatusMessage("Document successfully encrypted, pinned to IPFS, and registered on blockchain!");
+      setStatusMessage("Document successfully encrypted, pinned to IPFS, and permanently registered on Ethereum Sepolia!");
 
       onUploadSuccess(newDoc);
     } catch (err: any) {
       console.error("Pipeline failure:", err);
+      if (trackerRef.current && activeStepId) {
+        trackerRef.current.failStep(activeStepId, err.message || "Step failed");
+      }
       setPhase("ERROR");
-      setErrorMsg(err.message || "Upload and registration failed. Please try again.");
+      setErrorMsg(err.message || "Upload and on-chain registration failed. Please try again.");
     }
   };
+
+  const step1Timing = performanceMetrics?.steps.find((s) => s.id === "aes_encryption");
+  const step2Timing = performanceMetrics?.steps.find((s) => s.id === "chainlink_cre_ai");
+  const step3Timing = performanceMetrics?.steps.find((s) => s.id === "ipfs_upload");
+  const step4Timing = performanceMetrics?.steps.find((s) => s.id === "contract_minting");
 
   return (
     <section className="py-6">
@@ -335,22 +475,22 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
       <div className="text-center max-w-2xl mx-auto mb-8">
         <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-100 dark:border-indigo-800 text-indigo-700 dark:text-indigo-300 text-xs font-semibold mb-3">
           <Sparkles className="h-3.5 w-3.5" />
-          <span>Decentralized Document Vault</span>
+          <span>On-Chain Gas Tier Architecture</span>
         </div>
         <h1 className="text-3xl sm:text-4xl font-extrabold text-slate-900 dark:text-white tracking-tight">
-          Securely store and manage your documents
+          Securely store and register documents on-chain
         </h1>
         <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
-          Browser-side AES-256 encryption, Lighthouse Filecoin-backed IPFS storage, Lit Protocol access control, and Chainlink CRE risk attestation.
+          Client-side AES-256 encryption, Lighthouse Filecoin/IPFS storage, Lit Protocol access control, and live Ethereum Sepolia smart contract attestation with real-time performance telemetry.
         </p>
       </div>
 
-      {/* Upload Box Container matching user's ASCII diagram */}
+      {/* Upload Box Container */}
       <div className="max-w-2xl mx-auto bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm p-6 sm:p-8 transition-colors">
         <div className="flex flex-col sm:flex-row items-center justify-between gap-2 mb-5">
           <div className="text-center sm:text-left">
-            <h2 className="text-lg font-bold text-slate-900 dark:text-white">Upload Document</h2>
-            <p className="text-xs text-slate-500 dark:text-slate-400">Files are encrypted locally before leaving your browser</p>
+            <h2 className="text-lg font-bold text-slate-900 dark:text-white">Upload & Register Document</h2>
+            <p className="text-xs text-slate-500 dark:text-slate-400">Encrypted locally in browser & attested on Sepolia smart contract</p>
           </div>
           <LighthouseStatusIndicator
             onClick={() => setShowLighthouseModal(true)}
@@ -358,19 +498,19 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
           />
         </div>
 
-        {/* Safest Storage Path & MetaMask status banner */}
-        {wallet.isDemoMode ? (
+        {/* On-Chain Gas Tier Wallet Status Banner */}
+        {!isWalletReady ? (
           <div className="mb-5 p-3.5 rounded-xl border bg-amber-50/80 dark:bg-amber-950/30 border-amber-200 dark:border-amber-800/60 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs">
             <div className="flex items-start gap-2.5">
-              <span className="text-lg leading-none mt-0.5">⚠️</span>
+              <span className="text-lg leading-none mt-0.5">🦊</span>
               <div>
                 <div className="flex items-center gap-2">
                   <span className="font-bold text-amber-900 dark:text-amber-200">
-                    Demo Mode Active (Simulated Registry)
+                    MetaMask Connection Required (On-Chain Gas Tier)
                   </span>
                 </div>
                 <p className="text-amber-800/90 dark:text-amber-300/90 text-[11px] mt-0.5 leading-relaxed">
-                  To enable the <strong>safest storage path</strong> with real Ethereum Sepolia on-chain immutable registration, connect your MetaMask wallet.
+                  All documents require cryptographic MetaMask signatures and on-chain Sepolia smart contract registration.
                 </p>
               </div>
             </div>
@@ -380,32 +520,47 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
               onClick={onRequireConnect}
               className="shrink-0 w-full sm:w-auto px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-xs flex items-center justify-center gap-1.5 shadow-xs transition cursor-pointer"
             >
-              <span>🦊 Connect MetaMask</span>
+              <span>Connect MetaMask</span>
               <ArrowRight className="h-3 w-3" />
             </button>
           </div>
         ) : (
-          <div className="mb-5 p-3.5 rounded-xl border bg-emerald-50/80 dark:bg-emerald-950/30 border-emerald-200 dark:border-emerald-800/60 flex items-center justify-between gap-3 text-xs">
+          <div className="mb-5 p-3.5 rounded-xl border bg-emerald-50/80 dark:bg-emerald-950/30 border-emerald-200 dark:border-emerald-800/60 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs">
             <div className="flex items-center gap-2.5">
               <ShieldCheck className="h-4 w-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
               <div>
                 <div className="flex items-center gap-2">
                   <span className="font-bold text-emerald-900 dark:text-emerald-200">
-                    Safest Storage Path Active
+                    On-Chain Gas Tier Active
                   </span>
                   <span className="px-1.5 py-0.2 rounded text-[10px] bg-emerald-100 dark:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 font-mono">
-                    Sepolia On-Chain
+                    Sepolia Contract Verified
                   </span>
                 </div>
                 <p className="text-emerald-800/90 dark:text-emerald-300/90 text-[11px] mt-0.5">
-                  Connected to MetaMask ({wallet.address?.slice(0, 6)}...{wallet.address?.slice(-4)}). Document hashes are cryptographically sealed on Sepolia.
+                  Wallet: <code className="font-mono">{wallet.address?.slice(0, 6)}...{wallet.address?.slice(-4)}</code> • Balance: <span className="font-semibold">{wallet.balance || "0.0000"} ETH</span>
                 </p>
               </div>
             </div>
-            <span className="hidden sm:inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-700 dark:text-emerald-300 bg-emerald-100 dark:bg-emerald-900/40 px-2.5 py-1 rounded-lg">
-              <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
-              Verified
-            </span>
+
+            {hasZeroBalance ? (
+              <a
+                href="https://cloud.google.com/application/web3/faucet/ethereum/sepolia"
+                target="_blank"
+                rel="noreferrer"
+                className="shrink-0 px-2.5 py-1 bg-amber-600 hover:bg-amber-700 text-white rounded-lg font-semibold text-[11px] flex items-center gap-1 shadow-2xs cursor-pointer"
+                title="Get free Sepolia testnet ETH for gas"
+              >
+                <Fuel className="h-3 w-3" />
+                <span>Get Free Gas (Faucet)</span>
+                <ExternalLink className="h-2.5 w-2.5" />
+              </a>
+            ) : (
+              <span className="hidden sm:inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-700 dark:text-emerald-300 bg-emerald-100 dark:bg-emerald-900/40 px-2.5 py-1 rounded-lg">
+                <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
+                Gas Ready
+              </span>
+            )}
           </div>
         )}
 
@@ -459,79 +614,105 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
 
         {/* Selected File Card */}
         {file && (
-          <div className="mt-5 p-4 rounded-xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 animate-in fade-in">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3 min-w-0">
-                <div className="p-2.5 rounded-lg bg-indigo-100 dark:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 shrink-0">
-                  <FileText className="h-5 w-5" />
+          <div className="mt-5 p-4 rounded-xl border border-indigo-100 dark:border-indigo-900/50 bg-indigo-50/40 dark:bg-indigo-950/30">
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-3 overflow-hidden">
+                <div className="h-10 w-10 rounded-lg bg-indigo-100 dark:bg-indigo-900/60 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shrink-0">
+                  <File className="h-5 w-5" />
                 </div>
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs text-slate-500 dark:text-slate-400 font-medium">Selected file:</span>
-                    <span className="text-sm font-semibold text-slate-900 dark:text-white truncate font-mono">
-                      {file.name}
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-3 mt-0.5 text-xs text-slate-500 dark:text-slate-400">
-                    <span>{formatFileSize(file.size)}</span>
-                    <span>•</span>
-                    <span className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400 font-medium">
-                      <Lock className="h-3 w-3" /> Ready for AES-GCM 256
-                    </span>
-                  </div>
+                <div className="truncate">
+                  <p className="text-sm font-semibold text-slate-800 dark:text-slate-200 truncate">
+                    {file.name}
+                  </p>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    {formatBytes(file.size)} • {file.type || "Document"}
+                  </p>
                 </div>
               </div>
-
-              {phase === "IDLE" && (
-                <button
-                  onClick={clearSelectedFile}
-                  className="p-1.5 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition"
-                  title="Remove file"
-                >
-                  <X className="h-4 w-4" />
-                </button>
-              )}
+              <button
+                id="clear-file-btn"
+                onClick={clearSelectedFile}
+                disabled={phase !== "IDLE" && phase !== "SUCCESS" && phase !== "ERROR"}
+                className="p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-lg hover:bg-white dark:hover:bg-slate-800 transition disabled:opacity-30 cursor-pointer"
+                title="Remove selected file"
+              >
+                <X className="h-4 w-4" />
+              </button>
             </div>
 
-            {/* Upload Button */}
+            {/* Zero Balance Helper Banner */}
+            {hasZeroBalance && phase === "IDLE" && (
+              <div className="mt-3 p-3 bg-amber-50 dark:bg-amber-950/40 rounded-xl border border-amber-200 dark:border-amber-800 text-xs text-amber-900 dark:text-amber-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5">
+                <div className="flex items-center gap-2">
+                  <Fuel className="h-4 w-4 text-amber-600 dark:text-amber-400 shrink-0" />
+                  <span>
+                    <strong>Wallet Balance: 0.0000 ETH.</strong> Sepolia gas is required for on-chain smart contract registration.
+                  </span>
+                </div>
+                {onOpenFaucetModal && (
+                  <button
+                    id="upload-faucet-guide-btn"
+                    onClick={onOpenFaucetModal}
+                    className="w-full sm:w-auto px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-lg font-semibold text-[11px] transition cursor-pointer flex items-center justify-center gap-1.5 shadow-2xs shrink-0"
+                  >
+                    <Fuel className="h-3 w-3" />
+                    <span>Claim Free Gas</span>
+                  </button>
+                )}
+              </div>
+            )}
+
+            {/* Upload Action Button */}
             {phase === "IDLE" && (
-              <div className="mt-4 pt-3 border-t border-slate-200/80 dark:border-slate-700 flex justify-center">
+              <div className="mt-4 pt-4 border-t border-indigo-100 dark:border-indigo-900/50 flex flex-col sm:flex-row items-center justify-between gap-3">
+                <div className="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
+                  <Lock className="h-3.5 w-3.5 text-indigo-600 dark:text-indigo-400 shrink-0" />
+                  <span>Encrypted in browser, pinned to IPFS, and permanently registered on Sepolia.</span>
+                </div>
                 <button
                   id="upload-document-btn"
                   onClick={startUploadPipeline}
                   className="w-full sm:w-auto px-8 py-2.5 bg-indigo-600 hover:bg-indigo-700 active:scale-[0.98] text-white rounded-xl text-sm font-semibold shadow-sm shadow-indigo-200 dark:shadow-none transition cursor-pointer flex items-center justify-center gap-2"
                 >
                   <UploadCloud className="h-4 w-4" />
-                  <span>Upload Document</span>
+                  <span>Upload & Broadcast On-Chain</span>
                 </button>
               </div>
             )}
           </div>
         )}
 
-        {/* Phase Progress Tracker */}
+        {/* Phase Progress Tracker with Live Timing Telemetry */}
         {phase !== "IDLE" && (
           <div className="mt-6 p-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/50 space-y-4">
             <div className="flex items-center justify-between">
-              <span className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">
-                BlockNDrive Pipeline Progress
-              </span>
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">
+                  On-Chain Pipeline Execution
+                </span>
+                {phase !== "SUCCESS" && phase !== "ERROR" && (
+                  <span className="inline-flex items-center gap-1 font-mono text-[11px] font-bold text-indigo-600 dark:text-indigo-400 bg-indigo-100/70 dark:bg-indigo-950 px-2 py-0.5 rounded-md">
+                    <Clock className="h-3 w-3 animate-spin" />
+                    <span>{elapsedTimer}s</span>
+                  </span>
+                )}
+              </div>
               <span className="text-xs font-semibold text-indigo-600 dark:text-indigo-400">
                 {phase === "SUCCESS"
-                  ? "Completed"
+                  ? "Completed on Sepolia"
                   : phase === "ERROR"
                   ? "Action Halted"
-                  : "Processing..."}
+                  : "Broadcasting..."}
               </span>
             </div>
 
-            {/* 4 Pipeline Steps */}
+            {/* 4 Pipeline Steps with Granular Timing Badges */}
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
               {/* Step 1: AES */}
               <div
                 className={`p-2.5 rounded-lg border flex flex-col gap-1 ${
                   phase === "ENCRYPTING_AES"
-                    ? "bg-indigo-50 dark:bg-indigo-950/60 border-indigo-200 dark:border-indigo-800 text-indigo-900 dark:text-indigo-200"
+                    ? "bg-indigo-50 dark:bg-indigo-950/60 border-indigo-200 dark:border-indigo-800 text-indigo-900 dark:text-indigo-200 shadow-2xs"
                     : ["AI_ANALYZING", "UPLOADING_LIGHTHOUSE", "CONTRACT_MINTING", "SUCCESS"].includes(
                         phase
                       )
@@ -551,21 +732,30 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
                     <Lock className="h-3.5 w-3.5" />
                   )}
                 </div>
-                <span className="text-[10px] text-slate-500 dark:text-slate-400">AES-256 In-Browser</span>
+                <div className="flex items-center justify-between text-[10px] text-slate-500 dark:text-slate-400 font-mono">
+                  <span>AES-256</span>
+                  {step1Timing?.durationMs ? (
+                    <span className="font-bold text-emerald-600 dark:text-emerald-400">
+                      {formatDuration(step1Timing.durationMs)}
+                    </span>
+                  ) : (
+                    <span>Client</span>
+                  )}
+                </div>
               </div>
 
               {/* Step 2: CRE AI */}
               <div
                 className={`p-2.5 rounded-lg border flex flex-col gap-1 ${
                   phase === "AI_ANALYZING"
-                    ? "bg-indigo-50 dark:bg-indigo-950/60 border-indigo-200 dark:border-indigo-800 text-indigo-900 dark:text-indigo-200"
+                    ? "bg-indigo-50 dark:bg-indigo-950/60 border-indigo-200 dark:border-indigo-800 text-indigo-900 dark:text-indigo-200 shadow-2xs"
                     : ["UPLOADING_LIGHTHOUSE", "CONTRACT_MINTING", "SUCCESS"].includes(phase)
                     ? "bg-emerald-50 dark:bg-emerald-950/50 border-emerald-200 dark:border-emerald-800 text-emerald-900 dark:text-emerald-200"
                     : "bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-400 dark:text-slate-500"
                 }`}
               >
                 <div className="flex items-center justify-between">
-                  <span className="font-semibold">2. CRE & AI Risk</span>
+                  <span className="font-semibold">2. CRE AI Risk</span>
                   {phase === "AI_ANALYZING" ? (
                     <Loader2 className="h-3.5 w-3.5 animate-spin text-indigo-600 dark:text-indigo-400" />
                   ) : ["UPLOADING_LIGHTHOUSE", "CONTRACT_MINTING", "SUCCESS"].includes(phase) ? (
@@ -574,14 +764,23 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
                     <Cpu className="h-3.5 w-3.5" />
                   )}
                 </div>
-                <span className="text-[10px] text-slate-500 dark:text-slate-400">Gemini Extraction</span>
+                <div className="flex items-center justify-between text-[10px] text-slate-500 dark:text-slate-400 font-mono">
+                  <span>Scoring</span>
+                  {step2Timing?.durationMs ? (
+                    <span className="font-bold text-emerald-600 dark:text-emerald-400">
+                      {formatDuration(step2Timing.durationMs)}
+                    </span>
+                  ) : (
+                    <span>DON Oracle</span>
+                  )}
+                </div>
               </div>
 
               {/* Step 3: Lighthouse IPFS Node Verified */}
               <div
                 className={`p-2.5 rounded-lg border flex flex-col gap-1 ${
                   phase === "UPLOADING_LIGHTHOUSE"
-                    ? "bg-indigo-50 dark:bg-indigo-950/60 border-indigo-200 dark:border-indigo-800 text-indigo-900 dark:text-indigo-200"
+                    ? "bg-indigo-50 dark:bg-indigo-950/60 border-indigo-200 dark:border-indigo-800 text-indigo-900 dark:text-indigo-200 shadow-2xs"
                     : ["CONTRACT_MINTING", "SUCCESS"].includes(phase)
                     ? "bg-emerald-50 dark:bg-emerald-950/50 border-emerald-200 dark:border-emerald-800 text-emerald-900 dark:text-emerald-200"
                     : "bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-400 dark:text-slate-500"
@@ -597,21 +796,30 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
                     <Database className="h-3.5 w-3.5" />
                   )}
                 </div>
-                <span className="text-[10px] text-slate-500 dark:text-slate-400">Node Confirmed CID</span>
+                <div className="flex items-center justify-between text-[10px] text-slate-500 dark:text-slate-400 font-mono">
+                  <span>Filecoin Node</span>
+                  {step3Timing?.durationMs ? (
+                    <span className="font-bold text-emerald-600 dark:text-emerald-400">
+                      {step3Timing.throughputFormatted || formatDuration(step3Timing.durationMs)}
+                    </span>
+                  ) : (
+                    <span>Pinning</span>
+                  )}
+                </div>
               </div>
 
               {/* Step 4: Smart Contract Immutable Proof */}
               <div
                 className={`p-2.5 rounded-lg border flex flex-col gap-1 ${
                   phase === "CONTRACT_MINTING"
-                    ? "bg-indigo-50 dark:bg-indigo-950/60 border-indigo-200 dark:border-indigo-800 text-indigo-900 dark:text-indigo-200"
+                    ? "bg-indigo-50 dark:bg-indigo-950/60 border-indigo-200 dark:border-indigo-800 text-indigo-900 dark:text-indigo-200 shadow-2xs"
                     : phase === "SUCCESS"
                     ? "bg-emerald-50 dark:bg-emerald-950/50 border-emerald-200 dark:border-emerald-800 text-emerald-900 dark:text-emerald-200"
                     : "bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-400 dark:text-slate-500"
                 }`}
               >
                 <div className="flex items-center justify-between">
-                  <span className="font-semibold">4. Smart Contract</span>
+                  <span className="font-semibold">4. Sepolia Gas Tx</span>
                   {phase === "CONTRACT_MINTING" ? (
                     <Loader2 className="h-3.5 w-3.5 animate-spin text-indigo-600 dark:text-indigo-400" />
                   ) : phase === "SUCCESS" ? (
@@ -620,7 +828,16 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
                     <LinkIcon className="h-3.5 w-3.5" />
                   )}
                 </div>
-                <span className="text-[10px] text-slate-500 dark:text-slate-400">On-Chain Ownership</span>
+                <div className="flex items-center justify-between text-[10px] text-slate-500 dark:text-slate-400 font-mono">
+                  <span>MetaMask Gas</span>
+                  {step4Timing?.durationMs ? (
+                    <span className="font-bold text-emerald-600 dark:text-emerald-400">
+                      {formatDuration(step4Timing.durationMs)}
+                    </span>
+                  ) : (
+                    <span>EVM Sign</span>
+                  )}
+                </div>
               </div>
             </div>
 
@@ -633,15 +850,35 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
               ) : (
                 <Loader2 className="h-4 w-4 text-indigo-600 dark:text-indigo-400 animate-spin shrink-0" />
               )}
-              <span>{statusMessage}</span>
+              <span className="flex-1">{statusMessage}</span>
             </div>
+
+            {/* Detailed Performance Timing Metrics Card */}
+            {performanceMetrics && (
+              <div className="pt-2">
+                <UploadPerformanceMetricsCard
+                  metrics={performanceMetrics}
+                  fileName={file?.name}
+                  isLive={phase !== "SUCCESS" && phase !== "ERROR"}
+                  activeStepId={activeStepId}
+                  onCopyReport={() => {
+                    if (trackerRef.current) {
+                      const text = trackerRef.current.generateReportText(performanceMetrics);
+                      navigator.clipboard.writeText(text);
+                    } else {
+                      navigator.clipboard.writeText(JSON.stringify(performanceMetrics, null, 2));
+                    }
+                  }}
+                />
+              </div>
+            )}
 
             {/* Success Details Box */}
             {phase === "SUCCESS" && (
               <div className="bg-emerald-50/70 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 p-3 rounded-xl text-xs space-y-2">
                 <div className="flex items-center justify-between">
                   <span className="font-semibold text-emerald-900 dark:text-emerald-200">
-                    Vault Registration Successful
+                    On-Chain Smart Contract Registration Confirmed!
                   </span>
                   {aiPreview && (
                     <span
@@ -674,7 +911,7 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
 
                 {recentTx && (
                   <div className="flex items-center gap-1.5 text-slate-700 dark:text-slate-300">
-                    <span className="text-slate-500 dark:text-slate-400">Tx Hash:</span>
+                    <span className="text-slate-500 dark:text-slate-400">Sepolia Tx:</span>
                     <a
                       href={`https://sepolia.etherscan.io/tx/${recentTx}`}
                       target="_blank"
@@ -683,6 +920,7 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
                     >
                       {recentTx}
                     </a>
+                    <ExternalLink className="h-3 w-3 text-indigo-600 dark:text-indigo-400" />
                   </div>
                 )}
 
@@ -725,3 +963,4 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
     </section>
   );
 };
+

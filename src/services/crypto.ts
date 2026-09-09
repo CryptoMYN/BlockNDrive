@@ -54,20 +54,24 @@ export async function generateAESKey(): Promise<CryptoKey> {
 
 /**
  * Encrypt a File or ArrayBuffer in browser using AES-GCM 256.
- * The plaintext never leaves the browser.
+ * The plaintext never leaves the browser. Includes precise performance timing.
  */
 export async function encryptFileInBrowser(
   file: File
 ): Promise<EncryptedPayload> {
+  const startTime = performance.now();
   const arrayBuffer = await file.arrayBuffer();
 
   // 1. Generate AES-256 key
+  const tKeyGenStart = performance.now();
   const aesKey = await generateAESKey();
+  const keyGenDurationMs = performance.now() - tKeyGenStart;
 
   // 2. Generate random 96-bit (12 bytes) IV for AES-GCM
   const iv = window.crypto.getRandomValues(new Uint8Array(12));
 
-  // 3. Encrypt data
+  // 3. Encrypt data via Web Crypto AES-GCM-256
+  const tCipherStart = performance.now();
   const ciphertextBuffer = await window.crypto.subtle.encrypt(
     {
       name: "AES-GCM",
@@ -76,14 +80,17 @@ export async function encryptFileInBrowser(
     aesKey,
     arrayBuffer
   );
+  const cipherDurationMs = performance.now() - tCipherStart;
 
   // 4. Export raw AES key
   const rawKey = await window.crypto.subtle.exportKey("raw", aesKey);
   const rawKeyHex = ethers.hexlify(new Uint8Array(rawKey));
 
   // 5. Calculate Keccak256 hash of the encrypted ciphertext (bytes32 for smart contract)
+  const tHashStart = performance.now();
   const ciphertextBytes = new Uint8Array(ciphertextBuffer);
   const fileHash = ethers.keccak256(ciphertextBytes);
+  const hashDurationMs = performance.now() - tHashStart;
 
   // 6. Prepend IV (12 bytes) to ciphertext for self-contained encrypted blob
   const combinedBuffer = new Uint8Array(iv.length + ciphertextBytes.length);
@@ -97,14 +104,39 @@ export async function encryptFileInBrowser(
   // Base64 representation for Lighthouse upload payload
   const encryptedBase64 = uint8ArrayToBase64(combinedBuffer);
 
+  const totalDurationMs = Math.max(1, performance.now() - startTime);
+  const throughputMBps = parseFloat(
+    ((file.size / (1024 * 1024)) / (totalDurationMs / 1000)).toFixed(2)
+  );
+  const throughputFormatted =
+    throughputMBps >= 1
+      ? `${throughputMBps} MB/s`
+      : `${(throughputMBps * 1024).toFixed(1)} KB/s`;
+
+  console.log(
+    `[Crypto Performance] AES-GCM-256 Encryption completed in ${totalDurationMs.toFixed(
+      1
+    )}ms (${throughputFormatted}) for ${file.name}`
+  );
+
   return {
     ivHex: ethers.hexlify(iv),
     fileHash,
     encryptedBlob,
     encryptedBase64,
     rawKeyHex,
+    performanceStats: {
+      durationMs: totalDurationMs,
+      keyGenDurationMs,
+      cipherDurationMs,
+      hashDurationMs,
+      throughputMBps,
+      throughputFormatted,
+    },
   };
 }
+
+export const encryptFileAES = encryptFileInBrowser;
 
 /**
  * Decrypt an encrypted document buffer in browser using the stored AES key and IV

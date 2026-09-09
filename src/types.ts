@@ -11,6 +11,14 @@ export interface EncryptedPayload {
   encryptedBlob: Blob;
   encryptedBase64: string;
   rawKeyHex: string;
+  performanceStats?: {
+    durationMs: number;
+    keyGenDurationMs: number;
+    cipherDurationMs: number;
+    hashDurationMs: number;
+    throughputMBps: number;
+    throughputFormatted: string;
+  };
 }
 
 export interface AIAnalysisResult {
@@ -46,6 +54,43 @@ export interface LitAccessControlConfig {
   };
 }
 
+export interface PerformanceStepMetric {
+  id: string;
+  name: string;
+  category: "crypto" | "ai" | "storage" | "access_control" | "blockchain" | "network";
+  startTime: number;
+  endTime?: number;
+  durationMs: number;
+  bytesProcessed?: number;
+  throughputMBps?: number;
+  throughputFormatted?: string;
+  details?: string;
+  status: "pending" | "running" | "completed" | "warning" | "failed";
+}
+
+export type NetworkSpeedGrade = "ultra_fast" | "fast" | "moderate" | "slow" | "very_slow";
+
+export interface UploadPerformanceMetrics {
+  totalDurationMs: number;
+  fileSizeBytes: number;
+  encryptedSizeBytes: number;
+  encryptionDurationMs: number;
+  encryptionThroughputMBps: number;
+  encryptionThroughputFormatted: string;
+  ipfsUploadDurationMs: number;
+  ipfsThroughputMBps: number;
+  ipfsThroughputFormatted: string;
+  ipfsVerificationDurationMs: number;
+  aiAnalysisDurationMs: number;
+  litSealingDurationMs: number;
+  blockchainMiningDurationMs: number;
+  networkGrade: NetworkSpeedGrade;
+  networkGradeLabel: string;
+  networkAdvice: string;
+  steps: PerformanceStepMetric[];
+  completedAt: number;
+}
+
 export interface ManifestData {
   version: number;
   name: string;
@@ -61,6 +106,7 @@ export interface ManifestData {
     originalName: string;
     encryptionAlgorithm: "AES-GCM-256";
     storageProvider: "Lighthouse (Filecoin/IPFS)";
+    performanceMetrics?: UploadPerformanceMetrics;
   };
   aiAnalysis: AIAnalysisResult;
   riskScore: number;
@@ -139,5 +185,4 @@ export interface WalletState {
   networkName: string;
   balance: string | null;
   isMetaMaskAvailable: boolean;
-  isDemoMode: boolean;
 }

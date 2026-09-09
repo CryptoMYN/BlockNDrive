@@ -308,7 +308,7 @@ export const StorageQuotaCard: React.FC<StorageQuotaCardProps> = ({
               if (segPct <= 0) return null;
               return (
                 <div
-                  key={cat.type}
+                  key={`quota-seg-${cat.type}-${idx}`}
                   style={{
                     width: `${segPct}%`,
                     backgroundColor: cat.color,
@@ -349,9 +349,9 @@ export const StorageQuotaCard: React.FC<StorageQuotaCardProps> = ({
             <span>Usage Breakdown:</span>
           </span>
 
-          {categoryBreakdown.map((cat) => (
+          {categoryBreakdown.map((cat, catIdx) => (
             <div
-              key={cat.type}
+              key={`quota-breakdown-${cat.type}-${catIdx}`}
               className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-lg bg-slate-50 dark:bg-slate-800/70 border border-slate-200/80 dark:border-slate-700 text-[11px] text-slate-700 dark:text-slate-300 font-mono shadow-2xs"
             >
               <span

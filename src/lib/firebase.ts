@@ -3,6 +3,7 @@ import {
   getAuth,
   GoogleAuthProvider,
   signInWithPopup,
+  signInAnonymously,
   signOut,
   onAuthStateChanged,
   type User,
@@ -32,6 +33,26 @@ const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
 // Initialize Auth
 export const auth = getAuth(app);
 export const googleProvider = new GoogleAuthProvider();
+
+/**
+ * Ensure an authenticated session exists for the user.
+ * If not already signed in, seamlessly sign in anonymously so Firestore security rules succeed.
+ */
+export async function ensureFirebaseAuth(): Promise<User | null> {
+  try {
+    if (auth.currentUser) {
+      return auth.currentUser;
+    }
+    const cred = await signInAnonymously(auth);
+    return cred.user;
+  } catch (err) {
+    console.warn("Firebase anonymous auth initialization warning:", err);
+    return null;
+  }
+}
+
+// Auto-trigger anonymous session on load
+ensureFirebaseAuth();
 
 // Initialize Firestore with configured databaseId
 export const db: Firestore = getFirestore(
@@ -154,14 +175,24 @@ export async function saveDocumentToFirestore(
 /**
  * Fetch documents for a user from Firestore (including active and 24h-archived documents)
  */
-export async function getUserDocumentsFromFirestore(userId: string): Promise<VaultDocument[]> {
+export async function getUserDocumentsFromFirestore(userOrWalletAddress: string): Promise<VaultDocument[]> {
   try {
-    const q = query(
+    const q1 = query(
       collection(db, "documents"),
-      where("ownerId", "==", userId)
+      where("ownerId", "==", userOrWalletAddress)
     );
 
-    const snapshot = await getDocs(q);
+    let snapshot = await getDocs(q1);
+
+    // Fallback search by ownerAddress if q1 returned no results
+    if (snapshot.empty && userOrWalletAddress.startsWith("0x")) {
+      const q2 = query(
+        collection(db, "documents"),
+        where("ownerAddress", "==", userOrWalletAddress)
+      );
+      snapshot = await getDocs(q2);
+    }
+
     const docs: VaultDocument[] = [];
     const now = Date.now();
     const RETENTION_PERIOD_MS = 24 * 60 * 60 * 1000; // 24 hours
@@ -180,8 +211,15 @@ export async function getUserDocumentsFromFirestore(userId: string): Promise<Vau
         return;
       }
 
+      let parsedId = typeof data.onChainId === "number" && !isNaN(data.onChainId)
+        ? data.onChainId
+        : parseInt(String(data.id || "").replace(/^doc_/, ""), 10);
+      if (isNaN(parsedId) || parsedId <= 0) {
+        parsedId = docs.length + 1;
+      }
+
       docs.push({
-        id: data.onChainId ?? Number(data.id.replace("doc_", "")) ?? 1,
+        id: parsedId,
         manifestCID: data.manifestCID,
         fileHash: data.fileHash,
         manifestHash: data.manifestHash,

@@ -15,6 +15,13 @@ export interface LighthouseUploadResponse {
     synced?: boolean;
   };
   warning?: string;
+  performanceStats?: {
+    durationMs: number;
+    networkDurationMs: number;
+    bytesProcessed: number;
+    throughputMBps: number;
+    throughputFormatted: string;
+  };
 }
 
 export interface LighthouseStatusResponse {
@@ -208,12 +215,13 @@ export async function runLighthouseDiagnostics(customKey?: string): Promise<Ligh
 }
 
 /**
- * Upload encrypted file blob to Lighthouse IPFS
+ * Upload encrypted file blob to Lighthouse IPFS with performance timing logs
  */
 export async function uploadEncryptedFileToLighthouse(
   fileName: string,
   encryptedBlob: Blob
 ): Promise<LighthouseUploadResponse> {
+  const tStart = performance.now();
   const arrayBuffer = await encryptedBlob.arrayBuffer();
   const bytes = new Uint8Array(arrayBuffer);
   
@@ -226,6 +234,7 @@ export async function uploadEncryptedFileToLighthouse(
   }
   const fileContentBase64 = window.btoa(binary);
 
+  const tNetworkStart = performance.now();
   const response = await fetch("/api/lighthouse/upload", {
     method: "POST",
     headers: getLighthouseRequestHeaders(),
@@ -234,13 +243,43 @@ export async function uploadEncryptedFileToLighthouse(
       fileContentBase64,
     }),
   });
+  const tNetworkEnd = performance.now();
 
   if (!response.ok) {
     const err = await response.json().catch(() => ({}));
     throw new Error(err.error || "Failed to upload encrypted file to Lighthouse");
   }
 
-  return response.json();
+  const result = await response.json();
+  const totalDurationMs = Math.max(1, performance.now() - tStart);
+  const networkDurationMs = Math.max(1, tNetworkEnd - tNetworkStart);
+  
+  const throughputMBps = parseFloat(
+    ((encryptedBlob.size / (1024 * 1024)) / (networkDurationMs / 1000)).toFixed(2)
+  );
+  const throughputFormatted =
+    throughputMBps >= 1
+      ? `${throughputMBps} MB/s`
+      : `${(throughputMBps * 1024).toFixed(1)} KB/s`;
+
+  console.log(
+    `[IPFS Performance] Encrypted file (${(encryptedBlob.size / 1024).toFixed(
+      1
+    )} KB) uploaded in ${totalDurationMs.toFixed(1)}ms (Network: ${networkDurationMs.toFixed(
+      1
+    )}ms @ ${throughputFormatted}) -> CID: ${result.cid}`
+  );
+
+  return {
+    ...result,
+    performanceStats: {
+      durationMs: totalDurationMs,
+      networkDurationMs,
+      bytesProcessed: encryptedBlob.size,
+      throughputMBps,
+      throughputFormatted,
+    },
+  };
 }
 
 /**

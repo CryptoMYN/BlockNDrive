@@ -32,6 +32,7 @@ import { getFileVisualConfig } from "../utils/fileTypeHelper";
 import { LitShareModal } from "./LitShareModal";
 import { EncryptedSecurityBadge } from "./EncryptedSecurityBadge";
 import { DocumentActivityLogTab } from "./DocumentActivityLogTab";
+import { UploadPerformanceMetricsCard } from "./UploadPerformanceMetricsCard";
 
 interface DocumentDetailsModalProps {
   document: VaultDocument | null;
@@ -490,6 +491,16 @@ export const DocumentDetailsModal: React.FC<DocumentDetailsModalProps> = ({
               </div>
             )}
           </div>
+
+          {/* Upload Performance & Network Benchmark Telemetry */}
+          {manifest?.metadata?.performanceMetrics && (
+            <div className="pt-1">
+              <UploadPerformanceMetricsCard
+                metrics={manifest.metadata.performanceMetrics}
+                fileName={manifest?.name || manifest?.metadata?.originalName}
+              />
+            </div>
+          )}
         </div>
         )}
 

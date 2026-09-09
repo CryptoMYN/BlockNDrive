@@ -279,7 +279,7 @@ export const ProjectOverviewModal: React.FC<ProjectOverviewModalProps> = ({
                   const Icon = g.icon;
                   return (
                     <div
-                      key={g.id}
+                      key={`overview-goal-${g.id}`}
                       onClick={() => setActiveTab("goals")}
                       className={`p-3.5 rounded-xl border ${g.bgColor} transition cursor-pointer hover:shadow-xs flex items-start gap-3`}
                     >
@@ -318,7 +318,7 @@ export const ProjectOverviewModal: React.FC<ProjectOverviewModalProps> = ({
                   const Icon = g.icon;
                   return (
                     <div
-                      key={g.id}
+                      key={`detail-goal-${g.id}`}
                       className={`p-4 rounded-xl border ${g.bgColor} transition space-y-2`}
                     >
                       <div className="flex items-start justify-between gap-3">
@@ -375,7 +375,7 @@ export const ProjectOverviewModal: React.FC<ProjectOverviewModalProps> = ({
               <div className="space-y-3 relative before:absolute before:inset-0 before:left-6 before:w-0.5 before:bg-slate-200 dark:before:bg-slate-800">
                 {workflowSteps.map((s) => (
                   <div
-                    key={s.step}
+                    key={`workflow-step-${s.step}`}
                     className="relative flex items-start gap-4 p-4 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 ml-2"
                   >
                     <div className="w-8 h-8 rounded-full bg-indigo-600 text-white font-bold text-xs flex items-center justify-center shrink-0 shadow-md ring-4 ring-white dark:ring-slate-900 z-10">
