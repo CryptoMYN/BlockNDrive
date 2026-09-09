@@ -353,6 +353,17 @@ export async function permanentlyDeleteDocument(
   localStorage.setItem("blockndrive_documents", JSON.stringify(updated));
 
   try {
+    const permDeletedRaw = localStorage.getItem("blockndrive_permanently_deleted_ids");
+    const permDeletedIds: number[] = permDeletedRaw ? JSON.parse(permDeletedRaw) : [];
+    if (!permDeletedIds.includes(documentId)) {
+      permDeletedIds.push(documentId);
+      localStorage.setItem("blockndrive_permanently_deleted_ids", JSON.stringify(permDeletedIds));
+    }
+  } catch {
+    // ignore
+  }
+
+  try {
     const doc = docs.find((d) => d.id === documentId);
     if (doc?.fileHash) {
       localStorage.removeItem(`blockndrive_key_${doc.fileHash}`);
@@ -373,13 +384,21 @@ export async function fetchUserDocuments(
 ): Promise<VaultDocument[]> {
   const localDocs = getStoredDocuments();
 
+  let permDeletedIds: number[] = [];
+  try {
+    const raw = localStorage.getItem("blockndrive_permanently_deleted_ids");
+    if (raw) permDeletedIds = JSON.parse(raw);
+  } catch {
+    // ignore
+  }
+
   if (!ownerAddress) {
     return [];
   }
 
   if (!window.ethereum) {
     return localDocs.filter(
-      (d) => d.owner.toLowerCase() === ownerAddress.toLowerCase()
+      (d) => d.owner.toLowerCase() === ownerAddress.toLowerCase() && !permDeletedIds.includes(d.id)
     );
   }
 
@@ -391,6 +410,8 @@ export async function fetchUserDocuments(
 
     for (const id of docIds) {
       const numId = Number(id);
+      if (permDeletedIds.includes(numId)) continue;
+
       try {
         const rawDoc = await contract.getDocument(numId);
         // rawDoc: [owner, manifestCID, fileHash, manifestHash, createdAt, updatedAt, riskScore, deleted]
@@ -418,18 +439,18 @@ export async function fetchUserDocuments(
 
     // Merge any cached manifests
     for (const ld of localDocs) {
-      if (!fetchedDocs.some((fd) => fd.id === ld.id)) {
+      if (!permDeletedIds.includes(ld.id) && !fetchedDocs.some((fd) => fd.id === ld.id)) {
         if (ld.owner.toLowerCase() === ownerAddress.toLowerCase()) {
           fetchedDocs.push(ld);
         }
       }
     }
 
-    return fetchedDocs.filter((d) => !d.permanentlyDeleted);
+    return fetchedDocs.filter((d) => !d.permanentlyDeleted && !permDeletedIds.includes(d.id));
   } catch (err) {
     console.warn("Chain query fallback to local cache:", err);
     return localDocs.filter(
-      (d) => d.owner.toLowerCase() === ownerAddress.toLowerCase()
+      (d) => d.owner.toLowerCase() === ownerAddress.toLowerCase() && !permDeletedIds.includes(d.id)
     );
   }
 }
@@ -441,12 +462,21 @@ export function getStoredDocuments(): VaultDocument[] {
   const RETENTION_PERIOD_MS = 24 * 60 * 60 * 1000; // 24 hours
   const now = Date.now();
 
+  let permDeletedIds: number[] = [];
+  try {
+    const raw = localStorage.getItem("blockndrive_permanently_deleted_ids");
+    if (raw) permDeletedIds = JSON.parse(raw);
+  } catch {
+    // ignore
+  }
+
   try {
     const saved = localStorage.getItem("blockndrive_documents");
     if (saved) {
       const parsed: VaultDocument[] = JSON.parse(saved);
       if (Array.isArray(parsed) && parsed.length > 0) {
         const validDocs = parsed.filter((d) => {
+          if (permDeletedIds.includes(d.id)) return false;
           if (d.permanentlyDeleted) return false;
           if (d.deleted && d.deletedAt && now - d.deletedAt >= RETENTION_PERIOD_MS) {
             return false;
