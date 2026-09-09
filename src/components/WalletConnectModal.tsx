@@ -88,8 +88,14 @@ export const WalletConnectModal: React.FC<WalletConnectModalProps> = ({
   const hasZeroBalance = isRealMetaMaskConnected && (wallet.balance === "0.0000" || wallet.balance === "0" || !wallet.balance);
 
   return (
-    <div className="fixed inset-0 z-50 bg-slate-900/70 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
-      <div className="bg-white dark:bg-slate-900 rounded-3xl max-w-lg w-full p-6 sm:p-7 shadow-2xl border border-slate-100 dark:border-slate-800 animate-in fade-in zoom-in-95 duration-150 relative my-8">
+    <div
+      className="fixed inset-0 z-50 bg-slate-900/70 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto"
+      onClick={onClose}
+    >
+      <div
+        className="bg-white dark:bg-slate-900 rounded-3xl max-w-lg w-full p-6 sm:p-7 shadow-2xl border border-slate-100 dark:border-slate-800 animate-in fade-in zoom-in-95 duration-150 relative my-8"
+        onClick={(e) => e.stopPropagation()}
+      >
         {/* Close Button */}
         <button
           id="close-wallet-modal-btn"
@@ -339,20 +345,30 @@ export const WalletConnectModal: React.FC<WalletConnectModalProps> = ({
         </div>
 
         {/* Footer Info / Links */}
-        <div className="mt-5 pt-3.5 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-[11px] text-slate-500 dark:text-slate-400 flex-wrap gap-2">
-          <a
-            href={`https://sepolia.etherscan.io/address/${BLOCKNDRIVE_CONTRACT_ADDRESS}`}
-            target="_blank"
-            rel="noreferrer"
-            className="flex items-center gap-1 text-indigo-600 dark:text-indigo-400 hover:underline"
-          >
-            <span>Sepolia Contract: {BLOCKNDRIVE_CONTRACT_ADDRESS.slice(0, 6)}...{BLOCKNDRIVE_CONTRACT_ADDRESS.slice(-4)}</span>
-            <ArrowUpRight className="h-3 w-3" />
-          </a>
+        <div className="mt-5 pt-3.5 border-t border-slate-100 dark:border-slate-800 space-y-3">
+          <div className="flex items-center justify-between text-[11px] text-slate-500 dark:text-slate-400 flex-wrap gap-2">
+            <a
+              href={`https://sepolia.etherscan.io/address/${BLOCKNDRIVE_CONTRACT_ADDRESS}`}
+              target="_blank"
+              rel="noreferrer"
+              className="flex items-center gap-1 text-indigo-600 dark:text-indigo-400 hover:underline"
+            >
+              <span>Sepolia Contract: {BLOCKNDRIVE_CONTRACT_ADDRESS.slice(0, 6)}...{BLOCKNDRIVE_CONTRACT_ADDRESS.slice(-4)}</span>
+              <ArrowUpRight className="h-3 w-3" />
+            </a>
 
-          <span className="text-slate-400 dark:text-slate-500 font-mono">
-            Chain ID: 11155111
-          </span>
+            <span className="text-slate-400 dark:text-slate-500 font-mono">
+              Chain ID: 11155111
+            </span>
+          </div>
+
+          <button
+            id="return-to-dashboard-btn"
+            onClick={onClose}
+            className="w-full py-2.5 px-4 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-semibold transition cursor-pointer flex items-center justify-center gap-2"
+          >
+            <span>Return to Dashboard</span>
+          </button>
         </div>
       </div>
     </div>

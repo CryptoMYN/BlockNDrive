@@ -963,6 +963,28 @@ export const DocumentList: React.FC<DocumentListProps> = ({
                           <span>Risk: {doc.riskScore}</span>
                         </span>
 
+                        {/* Sepolia Confirmation Status Badge */}
+                        {doc.txHash ? (
+                          <a
+                            href={`https://sepolia.etherscan.io/tx/${doc.txHash}`}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 hover:underline"
+                            title={`Sepolia Transaction Hash: ${doc.txHash}. Click to view confirmed transaction on Etherscan.`}
+                          >
+                            <Check className="h-3 w-3 text-emerald-600 dark:text-emerald-400" />
+                            <span>Confirmed (Sepolia)</span>
+                            <ExternalLink className="h-3 w-3" />
+                          </a>
+                        ) : (
+                          <span
+                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-700"
+                            title="Local / Vault Record"
+                          >
+                            <span>Local Vault</span>
+                          </span>
+                        )}
+
                         {doc.manifest?.size && (
                           <span className="text-[11px] text-slate-400 dark:text-slate-500">
                             {formatFileSize(doc.manifest.size)}

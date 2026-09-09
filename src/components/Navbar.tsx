@@ -12,6 +12,7 @@ import {
   Sparkles,
   Fuel,
   Share2,
+  Terminal,
 } from "lucide-react";
 import {
   BLOCKNDRIVE_CONTRACT_ADDRESS,
@@ -31,6 +32,7 @@ interface NavbarProps {
   onOpenWalletModal?: () => void;
   onOpenShareModal?: () => void;
   onOpenFaucetModal?: () => void;
+  onOpenDebug?: () => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -42,6 +44,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   onOpenWalletModal,
   onOpenShareModal,
   onOpenFaucetModal,
+  onOpenDebug,
 }) => {
   const [copied, setCopied] = useState(false);
   const [showContractInfo, setShowContractInfo] = useState(false);
@@ -142,6 +145,19 @@ export const Navbar: React.FC<NavbarProps> = ({
                 >
                   <Fuel className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400" />
                   <span className="hidden sm:inline">Free Gas</span>
+                </button>
+              )}
+
+              {/* Debug Diagnostics Button */}
+              {onOpenDebug && (
+                <button
+                  id="debug-diagnostics-nav-btn"
+                  onClick={onOpenDebug}
+                  className="flex items-center gap-1.5 px-2.5 sm:px-3 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-700 dark:text-slate-300 transition cursor-pointer shadow-2xs"
+                  title="Open Web3 & Smart Contract Diagnostics"
+                >
+                  <Terminal className="h-3.5 w-3.5 text-indigo-500" />
+                  <span className="hidden sm:inline">Debug</span>
                 </button>
               )}
 

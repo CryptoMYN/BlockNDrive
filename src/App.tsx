@@ -9,6 +9,7 @@ import { ProjectOverviewModal } from "./components/ProjectOverviewModal";
 import { WalletConnectModal } from "./components/WalletConnectModal";
 import { ShareAppModal } from "./components/ShareAppModal";
 import { FaucetGuideModal } from "./components/FaucetGuideModal";
+import { DebugDiagnosticsModal } from "./components/DebugDiagnosticsModal";
 import { PublicOnboardingHero } from "./components/PublicOnboardingHero";
 import { OfflineIndicator } from "./components/OfflineIndicator";
 import { useTheme } from "./hooks/useTheme";
@@ -71,6 +72,7 @@ export default function App() {
   const [showWalletModal, setShowWalletModal] = useState<boolean>(false);
   const [showShareModal, setShowShareModal] = useState<boolean>(false);
   const [showFaucetModal, setShowFaucetModal] = useState<boolean>(false);
+  const [showDebugModal, setShowDebugModal] = useState<boolean>(false);
   const [authNotification, setAuthNotification] = useState<string | null>(null);
 
   // Check if MetaMask is available on mount & auto-listen for account/network changes
@@ -519,6 +521,7 @@ export default function App() {
         onOpenWalletModal={() => setShowWalletModal(true)}
         onOpenShareModal={() => setShowShareModal(true)}
         onOpenFaucetModal={() => setShowFaucetModal(true)}
+        onOpenDebug={() => setShowDebugModal(true)}
       />
 
       {/* Main Content Area */}
@@ -672,6 +675,15 @@ export default function App() {
         onClose={() => setShowFaucetModal(false)}
         walletAddress={wallet.address}
         balance={wallet.balance}
+      />
+
+      {/* Web3 Diagnostics & Debug Modal */}
+      <DebugDiagnosticsModal
+        isOpen={showDebugModal}
+        onClose={() => setShowDebugModal(false)}
+        walletAddress={wallet.address}
+        chainId={wallet.chainId}
+        balance={wallet.balance || "0.0000"}
       />
 
       {/* Network / Offline Monitor */}
