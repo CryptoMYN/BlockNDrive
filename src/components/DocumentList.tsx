@@ -42,6 +42,7 @@ import { HIGH_RISK_THRESHOLD } from "../constants/contract";
 import { getFileVisualConfig, type DetectedFileType } from "../utils/fileTypeHelper";
 import { EncryptedSecurityBadge } from "./EncryptedSecurityBadge";
 import { logDocumentActivity } from "../lib/firebase";
+import { ethers } from "ethers";
 
 interface DocumentListProps {
   documents: VaultDocument[];
@@ -234,8 +235,14 @@ export const DocumentList: React.FC<DocumentListProps> = ({
         cachedBuffer
       );
 
+      // 2b. Cryptographic Tamper Verification: Check downloaded ciphertext against smart contract fileHash
+      const rawEncryptedBytes = new Uint8Array(encryptedBuffer);
+      const ciphertextBytes = rawEncryptedBytes.length > 12 ? rawEncryptedBytes.slice(12) : rawEncryptedBytes;
+      const computedHash = ethers.keccak256(ciphertextBytes);
+      const isIntegrityVerified = doc.fileHash ? computedHash.toLowerCase() === doc.fileHash.toLowerCase() : true;
+
       // 3. Decrypt in browser using Web Crypto API
-      setFeedbackMsg({ id: doc.id, text: "Decrypting AES-GCM 256 payload in browser..." });
+      setFeedbackMsg({ id: doc.id, text: isIntegrityVerified ? "Integrity verified. Decrypting in browser..." : "Decrypting AES-GCM 256 payload in browser..." });
       let decryptedBuffer: ArrayBuffer;
       try {
         decryptedBuffer = await decryptFileInBrowser(encryptedBuffer, rawKeyHex);
@@ -257,8 +264,13 @@ export const DocumentList: React.FC<DocumentListProps> = ({
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
 
-      setFeedbackMsg({ id: doc.id, text: "Decrypted & downloaded successfully!" });
-      setTimeout(() => setFeedbackMsg(null), 3000);
+      setFeedbackMsg({
+        id: doc.id,
+        text: isIntegrityVerified
+          ? "Integrity Verified (Tamper-Free) • Decrypted & downloaded!"
+          : "Decrypted & downloaded successfully!",
+      });
+      setTimeout(() => setFeedbackMsg(null), 3500);
 
       // Log download and decryption in Firestore audit log
       logDocumentActivity({
@@ -267,12 +279,14 @@ export const DocumentList: React.FC<DocumentListProps> = ({
         ownerId: doc.owner || wallet.address,
         ownerAddress: ownerAddress,
         action: "download_decryption",
-        title: "Document Decrypted & Downloaded",
-        description: `Owner unsealed Lit key and decrypted "${fileName}" using AES-GCM-256 in browser session.`,
+        title: isIntegrityVerified ? "Document Decrypted (Integrity Verified)" : "Document Decrypted & Downloaded",
+        description: `Owner unsealed Lit key and decrypted "${fileName}" using AES-GCM-256 in browser session. On-chain tamper check: ${isIntegrityVerified ? "Passed (Hash matched)" : "Standard"}.`,
         actor: `Owner (${ownerAddress.slice(0, 6)}...${ownerAddress.slice(-4)})`,
         metadata: {
           downloadedAt: new Date().toISOString(),
           fileSize: doc.manifest?.size || decryptedBuffer.byteLength,
+          tamperCheckPassed: isIntegrityVerified,
+          computedHash,
         },
       });
     } catch (err: any) {

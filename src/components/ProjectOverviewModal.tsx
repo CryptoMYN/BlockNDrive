@@ -95,8 +95,8 @@ export const ProjectOverviewModal: React.FC<ProjectOverviewModalProps> = ({
       title: "5. 🤖 AI-Powered Analysis",
       tagline: "Use Chainlink CRE to extract metadata and generate a document risk score.",
       description:
-        "Chainlink Consensus Runtime Environment (CRE) paired with Google Gemini analyzes document structure, extracts sensitivity tags, detects PII/compliance factors, and computes an automated risk score (0-100).",
-      tech: "Chainlink CRE • Gemini 2.5/Flash • Consensus Attestations",
+        "Chainlink Consensus Runtime Environment (CRE) paired with Google Gemini 3.8 Flash analyzes document structure, extracts sensitivity tags, detects PII/compliance factors, and computes an automated risk score (0-100).",
+      tech: "Chainlink CRE • Gemini 3.8 Flash • Consensus Attestations",
     },
     {
       id: 6,
@@ -132,7 +132,7 @@ export const ProjectOverviewModal: React.FC<ProjectOverviewModalProps> = ({
     {
       step: 2,
       title: "AI Analysis & Risk Score",
-      desc: "Chainlink CRE / Gemini engine extracts metadata, PII tags, and produces a consensus risk score (0-100).",
+      desc: "Chainlink CRE / Gemini 3.8 Flash engine extracts metadata, PII tags, and produces a consensus risk score (0-100).",
       badge: "CRE + AI",
     },
     {

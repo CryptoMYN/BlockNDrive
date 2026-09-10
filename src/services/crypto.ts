@@ -201,7 +201,7 @@ export async function sealKeyForOwner(
 
   if (signer) {
     try {
-      const message = `BlockNDrive Access Control Key Grant\nContract: 0xb52cb5804b7ca391b78b96941768517b45760580\nOwner: ${ownerAddress}\nNonce: 1`;
+      const message = `BlockNDrive Access Control Key Grant\nContract: ${BLOCKNDRIVE_CONTRACT_ADDRESS}\nOwner: ${ownerAddress}\nNonce: 1`;
       const signature = await signer.signMessage(message);
       secretSeed = ethers.keccak256(ethers.toUtf8Bytes(signature));
     } catch {
@@ -236,7 +236,7 @@ export async function unsealKeyForOwner(
 
   if (signer) {
     try {
-      const message = `BlockNDrive Access Control Key Grant\nContract: 0xb52cb5804b7ca391b78b96941768517b45760580\nOwner: ${ownerAddress}\nNonce: 1`;
+      const message = `BlockNDrive Access Control Key Grant\nContract: ${BLOCKNDRIVE_CONTRACT_ADDRESS}\nOwner: ${ownerAddress}\nNonce: 1`;
       const signature = await signer.signMessage(message);
       secretSeed = ethers.keccak256(ethers.toUtf8Bytes(signature));
     } catch {
