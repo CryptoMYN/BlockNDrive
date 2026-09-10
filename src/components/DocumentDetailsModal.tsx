@@ -117,7 +117,7 @@ export const DocumentDetailsModal: React.FC<DocumentDetailsModalProps> = ({
                 </h3>
               </div>
               <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                Document #{document.id} • {fileVisual.label} • Registered on BlockNDrive
+                On-Chain Contract Record #{document.id} • {fileVisual.label} • Sepolia Registry
               </p>
             </div>
           </div>

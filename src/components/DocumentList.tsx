@@ -38,7 +38,7 @@ import type { VaultDocument, WalletState } from "../types";
 import { fetchEncryptedFileFromIPFS } from "../services/lighthouse";
 import { decryptFileInBrowser, unsealKeyForOwner } from "../services/crypto";
 import { deleteDocumentOnContract } from "../services/blockchain";
-import { HIGH_RISK_THRESHOLD } from "../constants/contract";
+import { HIGH_RISK_THRESHOLD, BLOCKNDRIVE_CONTRACT_ADDRESS } from "../constants/contract";
 import { getFileVisualConfig, type DetectedFileType } from "../utils/fileTypeHelper";
 import { EncryptedSecurityBadge } from "./EncryptedSecurityBadge";
 import { logDocumentActivity } from "../lib/firebase";
@@ -878,7 +878,7 @@ export const DocumentList: React.FC<DocumentListProps> = ({
             </p>
           </div>
         ) : (
-          filteredDocs.map((doc) => {
+          filteredDocs.map((doc, index) => {
             const fileName = doc.manifest?.name || `document_${doc.id}.pdf`;
             const isHighRisk = doc.riskScore >= HIGH_RISK_THRESHOLD;
             const fileVisual = getFileVisualConfig(fileName, doc.manifest?.mimeType);
@@ -1017,8 +1017,17 @@ export const DocumentList: React.FC<DocumentListProps> = ({
                           </>
                         )}
                         <span>•</span>
-                        <span className="font-mono text-[11px] text-slate-600 dark:text-slate-400">
-                          ID #{doc.id}
+                        <span
+                          className="font-mono text-[11px] px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-semibold inline-flex items-center gap-1"
+                          title={`Document #${index + 1} in your personal vault`}
+                        >
+                          Vault #{index + 1}
+                        </span>
+                        <span
+                          className="font-mono text-[10px] text-slate-400 dark:text-slate-500 hidden xs:inline-block"
+                          title={`Global Sepolia Smart Contract Registry ID #${doc.id} (total lifetime uploads on contract ${BLOCKNDRIVE_CONTRACT_ADDRESS.slice(0, 6)}...${BLOCKNDRIVE_CONTRACT_ADDRESS.slice(-4)})`}
+                        >
+                          (On-Chain #{doc.id})
                         </span>
                         <span>•</span>
                         <a
